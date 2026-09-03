@@ -9,11 +9,20 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 
-from src.producers.event_generator import MarketplaceEventGenerator
+from src.producers.event_generator import JourneyProbabilities, MarketplaceEventGenerator
 from src.producers.models import EventType
 
 
 REFERENCE_TIME = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+ALL_STAGES = JourneyProbabilities(
+    add_to_cart=1.0,
+    start_checkout=1.0,
+    create_order=1.0,
+    complete_payment=1.0,
+    ship_order=1.0,
+    deliver_order=1.0,
+    refund_order=1.0,
+)
 
 
 class MarketplaceEventGeneratorTests(unittest.TestCase):
@@ -86,6 +95,83 @@ class MarketplaceEventGeneratorTests(unittest.TestCase):
         self.assertEqual(len(lines), 3)
         for line in lines:
             self.assertIn(json.loads(line)["event_type"], {event.value for event in EventType})
+
+
+class CustomerJourneyTests(unittest.TestCase):
+    def _complete_journey(self, seed: int = 1):
+        return MarketplaceEventGenerator(
+            seed=seed,
+            reference_time=REFERENCE_TIME,
+            journey_probabilities=ALL_STAGES,
+        ).generate_journey()
+
+    def test_complete_journey_has_chronological_stage_order(self) -> None:
+        journey = self._complete_journey()
+
+        self.assertEqual([event.event_type for event in journey], list(EventType))
+        timestamps = [event.event_timestamp for event in journey]
+        self.assertEqual(timestamps, sorted(timestamps))
+        self.assertTrue(all(first < second for first, second in zip(timestamps, timestamps[1:])))
+
+    def test_journey_keeps_customer_session_and_product_consistent(self) -> None:
+        journey = self._complete_journey()
+
+        self.assertEqual(len({event.customer_id for event in journey}), 1)
+        self.assertEqual(len({event.session_id for event in journey}), 1)
+        self.assertEqual(len({event.product_id for event in journey}), 1)
+        self.assertEqual(len({event.seller_id for event in journey}), 1)
+
+    def test_order_events_share_order_id(self) -> None:
+        journey = self._complete_journey()
+        order_events = journey[3:]
+
+        self.assertEqual(len({event.order_id for event in order_events}), 1)
+        self.assertIsNotNone(order_events[0].order_id)
+
+    def test_refund_has_preceding_created_paid_and_delivered_order(self) -> None:
+        journey = self._complete_journey()
+        types = [event.event_type for event in journey]
+        refund_index = types.index(EventType.ORDER_REFUNDED)
+
+        for required in (
+            EventType.ORDER_CREATED,
+            EventType.PAYMENT_COMPLETED,
+            EventType.ORDER_DELIVERED,
+        ):
+            self.assertLess(types.index(required), refund_index)
+
+    def test_seeded_journeys_are_deterministic(self) -> None:
+        first = MarketplaceEventGenerator(seed=42)
+        second = MarketplaceEventGenerator(seed=42)
+
+        self.assertEqual(
+            [event.to_dict() for event in first.generate_journeys(20)],
+            [event.to_dict() for event in second.generate_journeys(20)],
+        )
+
+    def test_configured_drop_off_can_produce_view_only_journey(self) -> None:
+        view_only = JourneyProbabilities(add_to_cart=0.0)
+        journey = MarketplaceEventGenerator(
+            seed=5,
+            reference_time=REFERENCE_TIME,
+            journey_probabilities=view_only,
+        ).generate_journey()
+
+        self.assertEqual([event.event_type for event in journey], [EventType.PRODUCT_VIEWED])
+
+    def test_cli_emits_complete_journeys_as_json_lines(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "src.producers.event_generator", "--journeys", "5", "--seed", "42"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payloads = [json.loads(line) for line in result.stdout.splitlines()]
+
+        self.assertEqual(
+            sum(payload["event_type"] == "product_viewed" for payload in payloads),
+            5,
+        )
 
 
 if __name__ == "__main__":
