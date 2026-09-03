@@ -1,0 +1,51 @@
+
+# Python environments and bytecode
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# VS Code local workspace settings
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+*.code-workspace
+
+# Environment files
+.env
+
+# Test and coverage caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Generated local data
+data/*
+!data/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Spark local metadata and checkpoints
+.metastore_db/
+spark-warehouse/
+derby.log
+checkpoints/
+**/checkpoints/
+.checkpoints/
+**/.checkpoints/
+
