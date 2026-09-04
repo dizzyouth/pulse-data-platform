@@ -1,3 +1,39 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: pulse-airflow:2.11.2
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: &airflow-common-environment
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@airflow-postgres/${AIRFLOW_DB_NAME:-airflow}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-pulse-local-development-only}
+    PYTHONPATH: /opt/pulse
+    SPARK_MASTER: local[2]
+    BRONZE_MARKETPLACE_VALID_PATH: /opt/pulse/data/bronze/marketplace_events/valid
+    SILVER_MARKETPLACE_VALID_PATH: /opt/pulse/data/silver/marketplace_events/valid
+    SILVER_MARKETPLACE_REJECTED_PATH: /opt/pulse/data/silver/marketplace_events/rejected
+    SILVER_MARKETPLACE_VALID_CHECKPOINT_PATH: /opt/pulse/data/checkpoints/silver/marketplace_events/valid
+    SILVER_MARKETPLACE_REJECTED_CHECKPOINT_PATH: /opt/pulse/data/checkpoints/silver/marketplace_events/rejected
+    SILVER_EVENT_WATERMARK: ${SILVER_EVENT_WATERMARK:-7 days}
+    SILVER_SHUFFLE_PARTITIONS: ${SILVER_SHUFFLE_PARTITIONS:-4}
+    GOLD_DAILY_SALES_PATH: /opt/pulse/data/gold/daily_sales
+    GOLD_CUSTOMER_METRICS_PATH: /opt/pulse/data/gold/customer_metrics
+    GOLD_PRODUCT_METRICS_PATH: /opt/pulse/data/gold/product_metrics
+    GOLD_FUNNEL_METRICS_PATH: /opt/pulse/data/gold/funnel_metrics
+    GOLD_SHUFFLE_PARTITIONS: ${GOLD_SHUFFLE_PARTITIONS:-4}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags:ro
+    - ./src:/opt/pulse/src:ro
+    - ./data:/opt/pulse/data
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+
 services:
   kafka:
     image: apache/kafka:3.9.1
@@ -70,5 +106,77 @@ services:
           --topic marketplace.events
     restart: "no"
 
+  airflow-postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME:-airflow}
+    volumes:
+      - airflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_DB_USER:-airflow} -d ${AIRFLOW_DB_NAME:-airflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users list | grep -Fq "$${AIRFLOW_ADMIN_USERNAME}" || \
+          airflow users create \
+            --username "$${AIRFLOW_ADMIN_USERNAME}" \
+            --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+            --firstname Pulse \
+            --lastname Admin \
+            --role Admin \
+            --email pulse@example.local
+    environment:
+      <<: *airflow-common-environment
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-airflow}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-airflow}
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
 volumes:
   kafka-data:
+  airflow-postgres-data:
+  airflow-logs:

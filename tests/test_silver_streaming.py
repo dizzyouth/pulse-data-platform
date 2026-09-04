@@ -21,6 +21,7 @@ from src.streaming.silver_streaming import (
     DEFAULT_SILVER_VALID_CHECKPOINT_PATH,
     DEFAULT_SILVER_VALID_PATH,
     SUPPORTED_EVENT_TYPES,
+    build_silver_snapshot,
     build_silver_writer,
     classify_silver_events,
     load_silver_paths,
@@ -193,6 +194,31 @@ class SilverTransformationTests(unittest.TestCase):
             self.assertEqual(rejected.first().raw_json, records[-1]["raw_json"])
             self.assertTrue(list(paths.valid.glob("event_date=2026-01-02")))
             self.assertTrue(list(paths.rejected.glob("event_date=2026-01-02")))
+
+    def test_orchestrated_snapshot_is_finite_and_deduplicated(self) -> None:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            root = Path(directory)
+            paths = load_silver_paths({}, project_root=root)
+            bronze = self.spark.createDataFrame(
+                [
+                    bronze_record(event_id="evt_duplicate", kafka_offset=1),
+                    bronze_record(event_id="evt_duplicate", kafka_offset=2),
+                    bronze_record(event_id="evt_rejected", quantity=0, kafka_offset=3),
+                ],
+                BRONZE_VALID_SCHEMA,
+            )
+            bronze.write.parquet(str(paths.bronze_source))
+
+            build_silver_snapshot(self.spark, paths)
+
+            valid = self.spark.read.parquet(str(paths.valid))
+            rejected = self.spark.read.parquet(str(paths.rejected))
+            self.assertEqual(valid.count(), 1)
+            self.assertEqual(valid.first().event_id, "evt_duplicate")
+            self.assertEqual(rejected.count(), 1)
+            self.assertEqual(
+                rejected.first().silver_validation_errors, ["invalid_quantity"]
+            )
 
 
 class SilverPathConfigurationTests(unittest.TestCase):

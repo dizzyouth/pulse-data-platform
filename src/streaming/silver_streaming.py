@@ -14,11 +14,12 @@ from src.streaming.windows_spark import (
     configure_windows_spark_builder,
     configure_windows_spark_environment,
 )
+from src.utils.parquet import read_parquet_data_files
 
 # Configure the Windows process before PySpark can launch its JVM.
 configure_windows_spark_environment()
 
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
 from pyspark.sql.streaming import DataStreamWriter
 from pyspark.sql.types import (
@@ -213,6 +214,18 @@ def read_bronze_valid_stream(spark: SparkSession, source_path: Path) -> DataFram
     )
 
 
+def read_bronze_valid_batch(spark: SparkSession, source_path: Path) -> DataFrame:
+    """Read the current Bronze valid snapshot for finite orchestration."""
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Bronze valid path does not exist: {source_path}")
+    return read_parquet_data_files(
+        spark,
+        source_path,
+        schema=BRONZE_VALID_SCHEMA,
+    )
+
+
 def _normalized_optional_string(name: str):
     trimmed = F.trim(F.col(name))
     return F.when(trimmed == "", F.lit(None).cast("string")).otherwise(trimmed)
@@ -314,14 +327,46 @@ def build_silver_writer(
     )
 
 
+def build_silver_snapshot(spark: SparkSession, paths: SilverPaths) -> None:
+    """Replace Silver with a finite, deterministic snapshot of current Bronze."""
+
+    bronze = read_bronze_valid_batch(spark, paths.bronze_source)
+    frames = classify_silver_events(
+        bronze,
+        event_watermark=paths.event_watermark,
+        deduplicate=False,
+    )
+    first_event = Window.partitionBy("event_id").orderBy(
+        F.col("event_timestamp").asc(),
+        F.col("kafka_timestamp").asc_nulls_last(),
+        F.col("kafka_partition").asc_nulls_last(),
+        F.col("kafka_offset").asc_nulls_last(),
+    )
+    valid = (
+        frames.valid.withColumn("_event_rank", F.row_number().over(first_event))
+        .filter(F.col("_event_rank") == 1)
+        .drop("_event_rank")
+    )
+    valid.write.mode("overwrite").partitionBy("event_date").parquet(str(paths.valid))
+    frames.rejected.write.mode("overwrite").partitionBy("event_date").parquet(
+        str(paths.rejected)
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Curate Bronze marketplace events into Silver Parquet"
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--continuous",
         action="store_true",
         help="run continuously instead of processing currently available data",
+    )
+    mode.add_argument(
+        "--orchestrated-snapshot",
+        action="store_true",
+        help="replace Silver from the current Bronze snapshot without checkpoints",
     )
     return parser
 
@@ -334,6 +379,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     spark = build_silver_spark_session(master=master)
     spark.sparkContext.setLogLevel("WARN")
     try:
+        if args.orchestrated_snapshot:
+            build_silver_snapshot(spark, paths)
+            return 0
+
         bronze = read_bronze_valid_stream(spark, paths.bronze_source)
         frames = classify_silver_events(
             bronze, event_watermark=paths.event_watermark

@@ -30,7 +30,12 @@ data/*
 
 # Logs
 logs/
+airflow/logs/
 *.log
+
+# Airflow local runtime metadata
+airflow/airflow.db
+airflow/webserver_config.py
 
 # Temporary files
 tmp/

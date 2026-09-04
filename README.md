@@ -145,3 +145,64 @@ table builders and writers are separate so a future orchestrator can replace
 the full refresh with partition-scoped incremental builds. Currency values are
 not converted, refunds are not netted from revenue, and funnel rates are based
 on event counts rather than cohort/session attribution.
+
+## Airflow orchestration
+
+Apache Airflow 2.11.2 runs entirely in Docker; no native Windows Airflow
+installation is required. The local topology uses a webserver, scheduler with
+`LocalExecutor`, one-shot initialization service, and PostgreSQL metadata
+database. Celery and Redis are intentionally omitted for this single-machine
+development deployment.
+
+Bronze remains a continuously operating upstream Spark/Kafka service and is
+not started or supervised by this DAG. The manually triggered
+`pulse_analytics_pipeline` orchestrates only finite downstream work:
+
+```text
+check_bronze_available
+  -> build_silver
+  -> validate_silver
+  -> build_gold
+  -> validate_gold
+```
+
+`build_silver` uses the explicit `--orchestrated-snapshot` mode. It reads the
+current Bronze valid dataset as a finite snapshot, reuses the existing Silver
+normalization and quality classification, deterministically deduplicates by
+`event_id`, and replaces Silver valid/rejected outputs. The existing default
+available-now streaming mode and `--continuous` mode remain available for
+standalone use. The orchestration snapshot intentionally does not reuse
+host-created streaming checkpoints because checkpoint file URIs are not
+portable between Windows and the Linux Airflow containers.
+
+Copy the local defaults from `.env.example` into an untracked `.env` if you
+want to override them, then initialize and start the services:
+
+```powershell
+docker compose up airflow-init
+docker compose up -d
+docker compose ps
+```
+
+Open [http://localhost:8080](http://localhost:8080) and sign in with the local
+development defaults `airflow` / `airflow`. Override
+`AIRFLOW_ADMIN_USERNAME`, `AIRFLOW_ADMIN_PASSWORD`, database credentials, and
+the webserver secret in `.env` when desired; these defaults are not suitable
+for production.
+
+Trigger the workflow in the UI or from the scheduler container:
+
+```powershell
+docker compose exec airflow-scheduler airflow dags trigger pulse_analytics_pipeline
+```
+
+The containers mount only `airflow/dags`, `src`, and `data`. Project-relative
+host data is exposed as `/opt/pulse/data`; source is exposed read-only at
+`/opt/pulse/src`. Airflow logs and PostgreSQL metadata use Docker named volumes
+and generated pipeline data remains covered by `.gitignore`.
+
+This phase has no automatic schedule (`schedule=None`), permits only one active
+DAG run, and gives each task one short retry. Silver orchestration is a full
+snapshot rather than an incremental partition refresh, so it must not run
+concurrently with the standalone Silver writer. Airflow does not yet manage
+Bronze availability beyond validating its persisted Parquet input.

@@ -15,6 +15,7 @@ from src.streaming.windows_spark import (
     configure_windows_spark_builder,
     configure_windows_spark_environment,
 )
+from src.utils.parquet import read_parquet_data_files
 
 # Configure the Windows process before PySpark can launch its JVM.
 configure_windows_spark_environment()
@@ -186,10 +187,10 @@ def read_silver_valid(spark: SparkSession, source_path: Path) -> DataFrame:
 
     if not source_path.exists():
         raise FileNotFoundError(f"Silver valid path does not exist: {source_path}")
-    return (
-        spark.read.schema(SILVER_VALID_SCHEMA)
-        .option("basePath", str(source_path))
-        .parquet(str(source_path))
+    return read_parquet_data_files(
+        spark,
+        source_path,
+        schema=SILVER_VALID_SCHEMA,
     )
 
 
