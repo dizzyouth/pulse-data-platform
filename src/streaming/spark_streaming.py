@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from src.streaming.windows_spark import (
     configure_windows_spark_builder,
@@ -35,8 +36,16 @@ KAFKA_CONNECTOR_PACKAGE = (
 
 DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092"
 DEFAULT_MARKETPLACE_TOPIC = "marketplace.events"
-DEFAULT_CHECKPOINT_DIR = "data/checkpoints/marketplace_events"
 DEFAULT_STARTING_OFFSETS = "earliest"
+DEFAULT_BRONZE_VALID_PATH = "data/bronze/marketplace_events/valid"
+DEFAULT_BRONZE_INVALID_PATH = "data/bronze/marketplace_events/invalid"
+DEFAULT_BRONZE_VALID_CHECKPOINT_PATH = (
+    "data/checkpoints/bronze/marketplace_events/valid"
+)
+DEFAULT_BRONZE_INVALID_CHECKPOINT_PATH = (
+    "data/checkpoints/bronze/marketplace_events/invalid"
+)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 MARKETPLACE_EVENT_SCHEMA = StructType(
     [
@@ -71,6 +80,62 @@ class ClassifiedMarketplaceFrames:
     valid: DataFrame
     invalid: DataFrame
     all_records: DataFrame
+
+
+@dataclass(frozen=True, slots=True)
+class BronzePaths:
+    """Resolved output and checkpoint locations for both Bronze streams."""
+
+    valid: Path
+    invalid: Path
+    valid_checkpoint: Path
+    invalid_checkpoint: Path
+
+
+def _resolve_project_path(value: str, project_root: Path) -> Path:
+    path = Path(value).expanduser()
+    return path.resolve() if path.is_absolute() else (project_root / path).resolve()
+
+
+def load_bronze_paths(
+    environ: Mapping[str, str] | None = None,
+    *,
+    project_root: Path = PROJECT_ROOT,
+) -> BronzePaths:
+    """Load Bronze locations, resolving relative values from the project root."""
+
+    environment = os.environ if environ is None else environ
+    paths = BronzePaths(
+        valid=_resolve_project_path(
+            environment.get("BRONZE_MARKETPLACE_VALID_PATH", DEFAULT_BRONZE_VALID_PATH),
+            project_root,
+        ),
+        invalid=_resolve_project_path(
+            environment.get(
+                "BRONZE_MARKETPLACE_INVALID_PATH", DEFAULT_BRONZE_INVALID_PATH
+            ),
+            project_root,
+        ),
+        valid_checkpoint=_resolve_project_path(
+            environment.get(
+                "BRONZE_MARKETPLACE_VALID_CHECKPOINT_PATH",
+                DEFAULT_BRONZE_VALID_CHECKPOINT_PATH,
+            ),
+            project_root,
+        ),
+        invalid_checkpoint=_resolve_project_path(
+            environment.get(
+                "BRONZE_MARKETPLACE_INVALID_CHECKPOINT_PATH",
+                DEFAULT_BRONZE_INVALID_CHECKPOINT_PATH,
+            ),
+            project_root,
+        ),
+    )
+    if paths.valid == paths.invalid:
+        raise ValueError("Bronze valid and invalid output paths must be different")
+    if paths.valid_checkpoint == paths.invalid_checkpoint:
+        raise ValueError("Bronze valid and invalid checkpoint paths must be different")
+    return paths
 
 
 def build_spark_session(
@@ -182,10 +247,30 @@ def classify_marketplace_events(
         "kafka_timestamp",
         "raw_json",
         validation_errors.alias("validation_errors"),
+    ).withColumn("ingested_at_utc", F.current_timestamp())
+    classified = classified.withColumn(
+        "ingestion_date", F.to_date(F.col("ingested_at_utc"))
     )
     valid = classified.filter(F.size("validation_errors") == 0)
     invalid = classified.filter(F.size("validation_errors") > 0)
     return ClassifiedMarketplaceFrames(valid=valid, invalid=invalid, all_records=classified)
+
+
+def build_bronze_writer(
+    frame: DataFrame,
+    *,
+    output_path: Path,
+    checkpoint_path: Path,
+):
+    """Build an append-only, date-partitioned Parquet streaming writer."""
+
+    return (
+        frame.writeStream.format("parquet")
+        .outputMode("append")
+        .partitionBy("ingestion_date")
+        .option("path", str(output_path))
+        .option("checkpointLocation", str(checkpoint_path))
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -206,7 +291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "KAFKA_BOOTSTRAP_SERVERS", DEFAULT_BOOTSTRAP_SERVERS
     )
     topic = os.getenv("KAFKA_MARKETPLACE_TOPIC", DEFAULT_MARKETPLACE_TOPIC)
-    checkpoint_dir = os.getenv("SPARK_CHECKPOINT_DIR", DEFAULT_CHECKPOINT_DIR)
+    bronze_paths = load_bronze_paths()
     starting_offsets = os.getenv(
         "SPARK_KAFKA_STARTING_OFFSETS", DEFAULT_STARTING_OFFSETS
     )
@@ -223,17 +308,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         frames = classify_marketplace_events(source)
 
-        valid_writer = (
-            frames.valid.writeStream.format("console")
-            .outputMode("append")
-            .option("truncate", False)
-            .option("checkpointLocation", os.path.join(checkpoint_dir, "valid"))
+        valid_writer = build_bronze_writer(
+            frames.valid,
+            output_path=bronze_paths.valid,
+            checkpoint_path=bronze_paths.valid_checkpoint,
         )
-        invalid_writer = (
-            frames.invalid.writeStream.format("console")
-            .outputMode("append")
-            .option("truncate", False)
-            .option("checkpointLocation", os.path.join(checkpoint_dir, "invalid"))
+        invalid_writer = build_bronze_writer(
+            frames.invalid,
+            output_path=bronze_paths.invalid,
+            checkpoint_path=bronze_paths.invalid_checkpoint,
         )
         if args.continuous:
             valid_query = valid_writer.trigger(processingTime="5 seconds").start()

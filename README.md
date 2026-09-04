@@ -25,3 +25,37 @@ From the project root, run:
 ```powershell
 python -m src.streaming.spark_streaming
 ```
+
+## Bronze marketplace events
+
+The Spark entry point persists Kafka records as append-only Parquet files in
+two independently checkpointed streams:
+
+```text
+data/bronze/marketplace_events/
+|-- valid/
+|   `-- ingestion_date=YYYY-MM-DD/
+`-- invalid/
+    `-- ingestion_date=YYYY-MM-DD/
+
+data/checkpoints/bronze/marketplace_events/
+|-- valid/
+`-- invalid/
+```
+
+Each record retains the parsed marketplace fields, Kafka key/topic/partition/
+offset/timestamp, the original `raw_json`, `validation_errors`, and a Spark-
+generated UTC ingestion timestamp. `ingestion_date` is derived from that UTC
+timestamp and is used as a low-cardinality partition for practical local file
+layout. Invalid messages retain any fields Spark could recover and are never
+silently discarded.
+
+The four output and checkpoint locations are configured in `.env.example`.
+Relative values are resolved from the project root; absolute overrides are
+also supported. Generated Bronze data and checkpoints remain covered by the
+existing `data/*` Git ignore rule.
+
+Spark checkpoints record source progress and file-sink commits, preventing
+normal restarts of the same query from reprocessing committed offsets. This is
+not a general exactly-once guarantee for arbitrary external side effects,
+manual checkpoint deletion, or output/checkpoint path changes.
