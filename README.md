@@ -106,3 +106,42 @@ track each sink independently; changing or deleting them changes replay
 behavior and may produce duplicate Parquet rows. The local job defaults to
 four shuffle partitions to avoid excessive state-store files for this
 development-scale dataset.
+
+## Gold marketplace analytics
+
+Build all Gold tables from the current Silver valid snapshot with:
+
+```powershell
+python -m src.analytics.gold_build
+```
+
+The batch build reads only `data/silver/marketplace_events/valid` and replaces
+four query-ready Parquet datasets:
+
+- `daily_sales`: successful payments grouped by UTC event date, country, and
+  currency. Distinct paid order IDs define completed orders; revenue is the
+  sum of `quantity * unit_price`, and average order value divides gross revenue
+  by distinct completed orders.
+- `customer_metrics`: lifetime event counts, first/last activity, paid units,
+  gross paid revenue, and distinct paid orders per customer.
+- `product_metrics`: product activity, paid units/revenue, and distinct
+  customers. `seller_id` is retained only when the observed product-to-seller
+  mapping is unambiguous.
+- `funnel_metrics`: daily country-level event counts and adjacent-stage
+  conversion ratios. A zero denominator produces null rather than division by
+  zero.
+
+Refunds are counted separately and do not reduce gross revenue in this first
+version. Gold validates non-negative sales measures and conversion rates in
+the range `[0, 1]` before writing.
+
+`daily_sales` and `funnel_metrics` are partitioned by `event_date` for common
+date-range filtering. Customer and product tables are not partitioned by their
+high-cardinality identifiers. Output paths are configurable in `.env.example`
+and generated data remains ignored by Git.
+
+This phase performs a full overwrite from a consistent Silver snapshot. The
+table builders and writers are separate so a future orchestrator can replace
+the full refresh with partition-scoped incremental builds. Currency values are
+not converted, refunds are not netted from revenue, and funnel rates are based
+on event counts rather than cohort/session attribution.
