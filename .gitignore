@@ -32,6 +32,8 @@ data/*
 logs/
 airflow/logs/
 *.log
+*.dump
+*.sql.gz
 
 # Airflow local runtime metadata
 airflow/airflow.db

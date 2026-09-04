@@ -18,7 +18,7 @@ PROJECT_ROOT = "/opt/pulse"
 
 with DAG(
     dag_id=DAG_ID,
-    description="Build and validate Pulse Silver and Gold datasets",
+    description="Build Pulse analytics and refresh the PostgreSQL warehouse",
     schedule=DAG_SCHEDULE,
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
     catchup=False,
@@ -57,6 +57,16 @@ with DAG(
         bash_command="python -m src.orchestration.validation gold",
         cwd=PROJECT_ROOT,
     )
+    load_gold_to_warehouse = BashOperator(
+        task_id="load_gold_to_warehouse",
+        bash_command="python -m src.warehouse.load_gold load",
+        cwd=PROJECT_ROOT,
+    )
+    validate_warehouse = BashOperator(
+        task_id="validate_warehouse",
+        bash_command="python -m src.warehouse.load_gold validate",
+        cwd=PROJECT_ROOT,
+    )
 
     (
         check_bronze_available
@@ -64,4 +74,6 @@ with DAG(
         >> validate_silver
         >> build_gold
         >> validate_gold
+        >> load_gold_to_warehouse
+        >> validate_warehouse
     )

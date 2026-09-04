@@ -146,6 +146,58 @@ the full refresh with partition-scoped incremental builds. Currency values are
 not converted, refunds are not netted from revenue, and funnel rates are based
 on event counts rather than cohort/session attribution.
 
+## PostgreSQL analytics warehouse
+
+PostgreSQL 16.4 is the local serving/query layer for the Gold snapshot. It is
+deliberately separate from Airflow's PostgreSQL instance:
+
+- `airflow-postgres` stores Airflow metadata only and is not host-published.
+- `warehouse-postgres` (container `pulse-warehouse-postgres`) stores the
+  `analytics` serving schema and is published at `localhost:5433`.
+
+Host-side commands use `localhost:5433`. Docker services use
+`warehouse-postgres:5432`. Both connect to database `pulse_analytics` as user
+`pulse` by default. These are local-development credentials from
+`.env.example`; override them in the untracked `.env` file outside local use.
+
+Start the warehouse and load or validate it manually from the host with:
+
+```powershell
+docker compose up -d warehouse-postgres
+python -m src.warehouse.load_gold load
+python -m src.warehouse.load_gold validate
+```
+
+The loader creates four explicitly typed relational tables:
+
+- `analytics.daily_sales`, indexed by `event_date`
+- `analytics.customer_metrics`, indexed by `customer_id`
+- `analytics.product_metrics`, indexed by `product_id`
+- `analytics.funnel_metrics`, indexed by `event_date`
+
+Each run reads all four Gold Parquet datasets into staging tables, checks their
+required columns and aggregate constraints, and publishes all four replacements
+in one PostgreSQL transaction. A failure rolls back the whole refresh, leaving
+the previous serving snapshot available. This is a rerunnable full refresh,
+not incremental loading or CDC.
+
+Connect with any PostgreSQL client (for example,
+`psql -h localhost -p 5433 -U pulse -d pulse_analytics`) and query:
+
+```sql
+SELECT * FROM analytics.daily_sales ORDER BY event_date LIMIT 10;
+
+SELECT customer_id, total_revenue
+FROM analytics.customer_metrics
+ORDER BY total_revenue DESC
+LIMIT 10;
+
+SELECT product_id, gross_revenue
+FROM analytics.product_metrics
+ORDER BY gross_revenue DESC
+LIMIT 10;
+```
+
 ## Airflow orchestration
 
 Apache Airflow 2.11.2 runs entirely in Docker; no native Windows Airflow
@@ -164,6 +216,8 @@ check_bronze_available
   -> validate_silver
   -> build_gold
   -> validate_gold
+  -> load_gold_to_warehouse
+  -> validate_warehouse
 ```
 
 `build_silver` uses the explicit `--orchestrated-snapshot` mode. It reads the
@@ -196,10 +250,11 @@ Trigger the workflow in the UI or from the scheduler container:
 docker compose exec airflow-scheduler airflow dags trigger pulse_analytics_pipeline
 ```
 
-The containers mount only `airflow/dags`, `src`, and `data`. Project-relative
+The Airflow containers mount only `airflow/dags`, `src`, and `data`. Project-relative
 host data is exposed as `/opt/pulse/data`; source is exposed read-only at
-`/opt/pulse/src`. Airflow logs and PostgreSQL metadata use Docker named volumes
-and generated pipeline data remains covered by `.gitignore`.
+`/opt/pulse/src`. Airflow logs, Airflow metadata, and warehouse database files
+use separate Docker named volumes; generated pipeline data and database dumps
+remain covered by `.gitignore`.
 
 This phase has no automatic schedule (`schedule=None`), permits only one active
 DAG run, and gives each task one short retry. Silver orchestration is a full

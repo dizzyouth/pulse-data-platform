@@ -12,5 +12,7 @@ TASK_IDS = (
     "validate_silver",
     "build_gold",
     "validate_gold",
+    "load_gold_to_warehouse",
+    "validate_warehouse",
 )
 TASK_DEPENDENCIES = tuple(zip(TASK_IDS, TASK_IDS[1:]))

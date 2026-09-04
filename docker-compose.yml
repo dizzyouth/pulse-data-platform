@@ -25,6 +25,11 @@ x-airflow-common: &airflow-common
     GOLD_PRODUCT_METRICS_PATH: /opt/pulse/data/gold/product_metrics
     GOLD_FUNNEL_METRICS_PATH: /opt/pulse/data/gold/funnel_metrics
     GOLD_SHUFFLE_PARTITIONS: ${GOLD_SHUFFLE_PARTITIONS:-4}
+    WAREHOUSE_DB: ${WAREHOUSE_DB:-pulse_analytics}
+    WAREHOUSE_USER: ${WAREHOUSE_USER:-pulse}
+    WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-pulse-local-development-only}
+    WAREHOUSE_HOST: warehouse-postgres
+    WAREHOUSE_PORT: 5432
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
     - ./src:/opt/pulse/src:ro
@@ -32,6 +37,8 @@ x-airflow-common: &airflow-common
     - airflow-logs:/opt/airflow/logs
   depends_on:
     airflow-postgres:
+      condition: service_healthy
+    warehouse-postgres:
       condition: service_healthy
 
 services:
@@ -121,6 +128,24 @@ services:
       retries: 10
     restart: unless-stopped
 
+  warehouse-postgres:
+    image: postgres:16.4-alpine
+    container_name: pulse-warehouse-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${WAREHOUSE_USER:-pulse}
+      POSTGRES_PASSWORD: ${WAREHOUSE_PASSWORD:-pulse-local-development-only}
+      POSTGRES_DB: ${WAREHOUSE_DB:-pulse_analytics}
+    volumes:
+      - warehouse-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${WAREHOUSE_USER:-pulse} -d ${WAREHOUSE_DB:-pulse_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
@@ -179,4 +204,5 @@ services:
 volumes:
   kafka-data:
   airflow-postgres-data:
+  warehouse-postgres-data:
   airflow-logs:
