@@ -1,0 +1,58 @@
+version: 2
+
+sources:
+  - name: analytics
+    description: "Spark-produced Gold snapshots loaded transactionally into the dedicated Pulse analytics warehouse."
+    schema: analytics
+    tables:
+      - name: daily_sales
+        description: "Daily paid-order measures at event date, country, and currency grain; revenue is gross and refunds are not netted."
+        columns:
+          - name: event_date
+            description: "UTC calendar date of the payment events."
+            data_tests: [not_null]
+          - name: completed_orders
+            description: "Count of distinct successfully paid orders."
+            data_tests: [not_null, nonnegative]
+          - name: units_sold
+            description: "Units attached to completed payment events."
+            data_tests: [not_null, nonnegative]
+          - name: gross_revenue
+            description: "Gross payment revenue in the row's currency, before refunds or currency conversion."
+            data_tests: [not_null, nonnegative]
+      - name: customer_metrics
+        description: "Lifetime-to-date event and paid-commerce measures at customer grain."
+        columns:
+          - name: customer_id
+            description: "Stable marketplace customer identifier."
+            data_tests: [not_null, unique]
+          - name: total_revenue
+            description: "Customer gross paid revenue without refund netting or currency conversion."
+            data_tests: [not_null, nonnegative]
+      - name: product_metrics
+        description: "Lifetime-to-date activity and paid-commerce measures at product grain."
+        columns:
+          - name: product_id
+            description: "Stable marketplace product identifier."
+            data_tests: [not_null, unique]
+          - name: gross_revenue
+            description: "Product gross paid revenue without refund netting or currency conversion."
+            data_tests: [not_null, nonnegative]
+      - name: funnel_metrics
+        description: "Daily country-level event-count funnel stages and adjacent-stage conversion rates."
+        columns:
+          - name: event_date
+            description: "UTC calendar date of the funnel events."
+            data_tests: [not_null]
+          - name: view_to_cart_rate
+            description: "Cart-add events divided by product-view events; null when views are zero."
+            data_tests: [between_zero_and_one]
+          - name: cart_to_checkout_rate
+            description: "Checkout-start events divided by cart-add events; null when cart adds are zero."
+            data_tests: [between_zero_and_one]
+          - name: checkout_to_order_rate
+            description: "Order-created events divided by checkout-start events; null when checkouts are zero."
+            data_tests: [between_zero_and_one]
+          - name: order_to_payment_rate
+            description: "Payment-completed events divided by order-created events; null when orders are zero."
+            data_tests: [between_zero_and_one]

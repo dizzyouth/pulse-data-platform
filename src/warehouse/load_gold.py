@@ -178,12 +178,27 @@ def load_gold_to_warehouse(paths: GoldPaths | None = None) -> dict[str, int]:
                     counts[spec.name] = _validate_table_data(cursor, staging, spec)
                 for spec in TABLE_SPECS:
                     staging = f"_staging_{spec.name}_{suffix}"
-                    cursor.execute(sql.SQL("DROP TABLE IF EXISTS {}.{}").format(sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(spec.name)))
-                    cursor.execute(sql.SQL("ALTER TABLE {}.{} RENAME TO {}").format(sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(staging), sql.Identifier(spec.name)))
-                    cursor.execute(sql.SQL("CREATE INDEX {} ON {}.{} ({})").format(
-                        sql.Identifier(f"idx_{spec.name}_{spec.index_column}"), sql.Identifier(WAREHOUSE_SCHEMA),
-                        sql.Identifier(spec.name), sql.Identifier(spec.index_column),
-                    ))
+                    cursor.execute("SELECT to_regclass(%s)", (f"{WAREHOUSE_SCHEMA}.{spec.name}",))
+                    if cursor.fetchone()[0] is None:
+                        cursor.execute(sql.SQL("ALTER TABLE {}.{} RENAME TO {}").format(
+                            sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(staging), sql.Identifier(spec.name)
+                        ))
+                        cursor.execute(sql.SQL("CREATE INDEX {} ON {}.{} ({})").format(
+                            sql.Identifier(f"idx_{spec.name}_{spec.index_column}"), sql.Identifier(WAREHOUSE_SCHEMA),
+                            sql.Identifier(spec.name), sql.Identifier(spec.index_column),
+                        ))
+                    else:
+                        target = sql.SQL("{}.{}").format(
+                            sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(spec.name)
+                        )
+                        columns = sql.SQL(", ").join(map(sql.Identifier, spec.required_columns))
+                        cursor.execute(sql.SQL("TRUNCATE TABLE {}").format(target))
+                        cursor.execute(sql.SQL("INSERT INTO {} ({}) SELECT {} FROM {}.{}").format(
+                            target, columns, columns, sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(staging)
+                        ))
+                        cursor.execute(sql.SQL("DROP TABLE {}.{}").format(
+                            sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(staging)
+                        ))
         return counts
     finally:
         for frame in frames.values():

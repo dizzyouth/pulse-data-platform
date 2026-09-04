@@ -1,0 +1,14 @@
+name: pulse_analytics
+version: "1.0.0"
+config-version: 2
+
+profile: pulse_analytics
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  pulse_analytics:
+    marts:
+      +materialized: view

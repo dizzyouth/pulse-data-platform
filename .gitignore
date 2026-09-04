@@ -56,3 +56,9 @@ checkpoints/
 .checkpoints/
 **/.checkpoints/
 
+# dbt runtime artifacts and local credentials
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+

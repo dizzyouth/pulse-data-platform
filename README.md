@@ -176,10 +176,11 @@ The loader creates four explicitly typed relational tables:
 - `analytics.funnel_metrics`, indexed by `event_date`
 
 Each run reads all four Gold Parquet datasets into staging tables, checks their
-required columns and aggregate constraints, and publishes all four replacements
-in one PostgreSQL transaction. A failure rolls back the whole refresh, leaving
-the previous serving snapshot available. This is a rerunnable full refresh,
-not incremental loading or CDC.
+required columns and aggregate constraints, and publishes all four datasets in
+one PostgreSQL transaction. Existing tables are truncated and refilled in place
+so dependent dbt views remain valid; first-time tables are promoted from staging.
+A failure rolls back the whole refresh, leaving the previous serving snapshot
+available. This is a rerunnable full refresh, not incremental loading or CDC.
 
 Connect with any PostgreSQL client (for example,
 `psql -h localhost -p 5433 -U pulse -d pulse_analytics`) and query:
@@ -197,6 +198,59 @@ FROM analytics.product_metrics
 ORDER BY gross_revenue DESC
 LIMIT 10;
 ```
+
+## dbt warehouse marts and lineage
+
+dbt adds warehouse-native presentation models, tests, documentation, and
+lineage after the Spark-owned Gold snapshot reaches PostgreSQL. Responsibilities
+remain deliberately separated:
+
+- Spark owns Bronze/Silver transformations, Gold business aggregations, and
+  Parquet outputs.
+- The warehouse loader owns the transactional `analytics` serving snapshot.
+- dbt treats those four tables as read-only sources and builds lightweight
+  PostgreSQL views in `marts`; it does not reproduce the Spark aggregations.
+
+The project lives in `dbt/`: `models/sources.yml` describes and tests the four
+`analytics` sources, `models/marts/` contains the four presentation views and
+their documentation, `macros/` contains the two small reusable range tests,
+and `profiles.yml` reads connection values exclusively from environment
+variables. Generated `target/` and `logs/` directories are ignored.
+
+The lineage graph is intentionally compact:
+
+```text
+analytics.daily_sales       -> marts.revenue_by_day
+analytics.customer_metrics  -> marts.top_customers
+analytics.product_metrics   -> marts.top_products
+analytics.funnel_metrics    -> marts.funnel_performance
+```
+
+All marts are views. `revenue_by_day` combines countries only within the same
+date and currency, retaining `currency` so unlike monetary units are never
+summed. Customer and product marts add descending revenue ranks. Funnel metrics
+remain at date-country grain with their existing event-count conversion
+semantics.
+
+Install `requirements.txt`, export the warehouse values shown in
+`.env.example`, and run from the repository root:
+
+```powershell
+dbt debug --project-dir dbt --profiles-dir dbt
+dbt run --project-dir dbt --profiles-dir dbt
+dbt test --project-dir dbt --profiles-dir dbt
+dbt docs generate --project-dir dbt --profiles-dir dbt
+```
+
+Source tests cover required identifiers/dates, uniqueness at customer and
+product grain, non-negative aggregates, and nullable funnel rates constrained
+to `[0, 1]`. Mart tests repeat important presentation-layer identity, revenue,
+and rate contracts. Generated documentation includes direct source-to-mart
+lineage and column descriptions.
+
+Current limitations follow the upstream snapshot: dbt does not perform
+incremental processing, currency conversion, refund netting, or cohort/session
+funnel attribution. Documentation is generated locally but is not committed.
 
 ## Airflow orchestration
 
@@ -218,6 +272,8 @@ check_bronze_available
   -> validate_gold
   -> load_gold_to_warehouse
   -> validate_warehouse
+  -> run_dbt
+  -> test_dbt
 ```
 
 `build_silver` uses the explicit `--orchestrated-snapshot` mode. It reads the
@@ -250,9 +306,10 @@ Trigger the workflow in the UI or from the scheduler container:
 docker compose exec airflow-scheduler airflow dags trigger pulse_analytics_pipeline
 ```
 
-The Airflow containers mount only `airflow/dags`, `src`, and `data`. Project-relative
+The Airflow containers mount `airflow/dags`, `src`, `dbt`, and `data`. Project-relative
 host data is exposed as `/opt/pulse/data`; source is exposed read-only at
-`/opt/pulse/src`. Airflow logs, Airflow metadata, and warehouse database files
+`/opt/pulse/src`, and the dbt project is exposed read-only at `/opt/pulse/dbt`.
+Airflow logs, Airflow metadata, and warehouse database files
 use separate Docker named volumes; generated pipeline data and database dumps
 remain covered by `.gitignore`.
 

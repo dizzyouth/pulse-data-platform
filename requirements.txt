@@ -1,3 +1,7 @@
 confluent-kafka==2.15.0
 pyspark==4.2.0
 psycopg[binary]==3.2.9
+dbt-core==1.9.8
+dbt-postgres==1.9.1
+# Keep the shared Airflow/dbt image compatible with grpcio-status.
+protobuf==5.29.6

@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: revenue_by_day
+    description: "Daily revenue presentation by currency; countries are combined, but currencies are intentionally never mixed."
+    columns:
+      - name: event_date
+        description: "UTC revenue date."
+        data_tests: [not_null]
+      - name: currency
+        description: "ISO currency dimension retained to prevent invalid cross-currency sums."
+        data_tests: [not_null]
+      - name: gross_revenue
+        description: "Gross paid revenue before refunds, expressed in currency."
+        data_tests: [not_null, nonnegative]
+  - name: top_customers
+    description: "Customer commerce metrics with a warehouse-computed descending gross-revenue rank."
+    columns:
+      - name: customer_id
+        description: "Stable customer identifier."
+        data_tests: [not_null, unique]
+      - name: revenue_rank
+        description: "Rank by total gross revenue descending; ties share a rank."
+        data_tests: [not_null]
+  - name: top_products
+    description: "Product commerce metrics with a warehouse-computed descending gross-revenue rank."
+    columns:
+      - name: product_id
+        description: "Stable product identifier."
+        data_tests: [not_null, unique]
+      - name: revenue_rank
+        description: "Rank by gross revenue descending; ties share a rank."
+        data_tests: [not_null]
+  - name: funnel_performance
+    description: "Presentation of daily country funnel volumes and adjacent-stage event conversion rates."
+    columns:
+      - name: event_date
+        description: "UTC funnel date."
+        data_tests: [not_null]
+      - name: country
+        description: "Marketplace country dimension."
+        data_tests: [not_null]
+      - name: view_to_cart_rate
+        description: "Cart adds divided by views; null for a zero denominator."
+        data_tests: [between_zero_and_one]
+      - name: cart_to_checkout_rate
+        description: "Checkout starts divided by cart adds; null for a zero denominator."
+        data_tests: [between_zero_and_one]
+      - name: checkout_to_order_rate
+        description: "Orders created divided by checkout starts; null for a zero denominator."
+        data_tests: [between_zero_and_one]
+      - name: order_to_payment_rate
+        description: "Payments completed divided by orders created; null for a zero denominator."
+        data_tests: [between_zero_and_one]

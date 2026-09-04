@@ -30,9 +30,14 @@ x-airflow-common: &airflow-common
     WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-pulse-local-development-only}
     WAREHOUSE_HOST: warehouse-postgres
     WAREHOUSE_PORT: 5432
+    DBT_SCHEMA: ${DBT_SCHEMA:-marts}
+    DBT_PROFILES_DIR: /opt/pulse/dbt
+    DBT_TARGET_PATH: /tmp/pulse-dbt-target
+    DBT_LOG_PATH: /tmp/pulse-dbt-logs
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
     - ./src:/opt/pulse/src:ro
+    - ./dbt:/opt/pulse/dbt:ro
     - ./data:/opt/pulse/data
     - airflow-logs:/opt/airflow/logs
   depends_on:
