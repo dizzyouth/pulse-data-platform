@@ -59,3 +59,50 @@ Spark checkpoints record source progress and file-sink commits, preventing
 normal restarts of the same query from reprocessing committed offsets. This is
 not a general exactly-once guarantee for arbitrary external side effects,
 manual checkpoint deletion, or output/checkpoint path changes.
+
+## Silver marketplace events
+
+Run the bounded, test-friendly Silver stream from the project root with:
+
+```powershell
+python -m src.streaming.silver_streaming
+```
+
+The job reads only Bronze valid Parquet and writes two independently
+checkpointed streams:
+
+```text
+data/silver/marketplace_events/
+|-- valid/
+|   `-- event_date=YYYY-MM-DD/
+`-- rejected/
+    `-- event_date=YYYY-MM-DD/
+
+data/checkpoints/silver/marketplace_events/
+|-- valid/
+`-- rejected/
+```
+
+Silver trims identifiers, lowercases event types, uppercases country and
+currency codes, preserves typed timestamps/numbers, and derives `event_date`
+in UTC. Valid output retains Kafka and ingestion lineage but omits Bronze
+`raw_json` and validation errors. Rejected rows retain `raw_json` and add
+`silver_validation_errors` for diagnosis.
+
+Quality rules reject missing core identifiers or timestamps, unsupported event
+types, non-positive quantities, negative prices, non-two-letter country codes,
+and non-three-letter currency codes. Records are quarantined rather than
+silently dropped.
+
+Quality-valid records use a seven-day event-time watermark by default and
+`dropDuplicatesWithinWatermark` on `event_id`. This removes repeated event IDs
+while bounding streaming state; a duplicate arriving after the watermark
+horizon is not guaranteed to be recognized. `event_date` is used for storage
+partitioning because it supports common time-range queries without creating
+the tiny partitions that high-cardinality customer or event IDs would cause.
+
+Paths and the watermark are configurable through `.env.example`. Checkpoints
+track each sink independently; changing or deleting them changes replay
+behavior and may produce duplicate Parquet rows. The local job defaults to
+four shuffle partitions to avoid excessive state-store files for this
+development-scale dataset.
