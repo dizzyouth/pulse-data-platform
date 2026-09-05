@@ -62,3 +62,10 @@ dbt/logs/
 dbt/dbt_packages/
 dbt/.user.yml
 
+# Metabase runtime state (the Docker deployment uses a named Postgres volume)
+metabase.db/
+metabase.db.*
+bi/runtime/
+.env.*
+!.env.example
+

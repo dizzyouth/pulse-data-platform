@@ -252,6 +252,107 @@ Current limitations follow the upstream snapshot: dbt does not perform
 incremental processing, currency conversion, refund netting, or cohort/session
 funnel attribution. Documentation is generated locally but is not committed.
 
+## Metabase BI consumption
+
+Metabase `v0.63.16.5` provides the local BI UI at
+[http://localhost:3000](http://localhost:3000). It consumes PostgreSQL dbt marts,
+not Parquet or the Bronze/Silver layers, so dashboard users see documented and
+tested presentation contracts without changing the Spark-to-warehouse design.
+
+The three PostgreSQL responsibilities remain physically separate:
+
+- `airflow-postgres` stores only Airflow metadata.
+- `warehouse-postgres` stores Pulse `analytics` tables and `marts` views.
+- `metabase-postgres` stores only Metabase users, questions, dashboards, and
+  other application metadata in the `pulse_metabase` database and an isolated
+  Docker named volume. It is not published to the host.
+
+Copy `.env.example` to the ignored `.env` file and replace the local-only
+passwords if desired. Start the stack and inspect service health with:
+
+```powershell
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+```
+
+The one-shot `metabase-setup` service uses the pinned Metabase API to create the
+first local admin and register the analytics connection idempotently. Its local
+defaults are `admin@pulse.local` / `PulseLocal!4xN7qB2v`; override
+`METABASE_ADMIN_EMAIL` and `METABASE_ADMIN_PASSWORD` in `.env` before the first
+startup. The registered database is named `Pulse Analytics Warehouse` and uses:
+
+```text
+type: PostgreSQL
+host: warehouse-postgres
+port: 5432
+database: pulse_analytics
+user/password: WAREHOUSE_USER / WAREHOUSE_PASSWORD
+```
+
+If Metabase was initialized earlier with different admin credentials, update the
+two admin variables to match and rerun `docker compose up metabase-setup`. The
+setup job verifies its connection by querying all four non-empty marts. Its
+application-database settings (`MB_DB_*`) point only to `metabase-postgres` and
+must not be changed to the analytics warehouse. Sample content, anonymous usage
+tracking, update checks, and AI features are disabled for this local BI service.
+Its JVM is capped at 512 MB and uses reduced local-development thread pools so
+it can remain online while the Spark/Airflow pipeline runs.
+
+### Pulse Marketplace Overview dashboard
+
+The setup service also reconciles the `Pulse Marketplace` collection, six saved
+questions, and **Pulse Marketplace Overview** dashboard through the pinned API.
+Rerun with `docker compose run --rm metabase-setup`. Existing IDs and unrelated
+dashboard cards are preserved. See `bi/DASHBOARD.md` for layout and filter scope;
+verified plain PostgreSQL queries live in `bi/queries/`.
+
+The provisioned dashboard contains:
+
+- revenue totals, orders, units, weighted average order value, and a date trend;
+- funnel stage volumes and adjacent-stage conversion rates;
+- top-customer operational rankings and purchase measures;
+- top-product operational rankings and product measures; and
+- country-level funnel volume and weighted conversion performance.
+
+Use event-date and currency filters for revenue cards, and event-date and country
+filters for funnel/geography cards. Revenue cards must retain currency as a
+group or require a single-currency filter; Pulse does not have exchange rates and
+must never present unlike currencies as one monetary total. The current upstream
+customer/product lifetime marts do not carry currency. Their BI cards therefore
+omit revenue and revenue rank, and rank units purchased instead.
+
+The four core queries are:
+
+```sql
+SELECT event_date, currency, gross_revenue, completed_orders, units_sold,
+       avg_order_value
+FROM marts.revenue_by_day
+ORDER BY event_date, currency;
+
+SELECT customer_id, total_units_purchased, payments_completed, distinct_orders
+FROM marts.top_customers
+ORDER BY total_units_purchased DESC, customer_id
+LIMIT 20;
+
+SELECT product_id, seller_id, units_sold, payments_completed, distinct_customers
+FROM marts.top_products
+ORDER BY units_sold DESC, product_id
+LIMIT 20;
+
+SELECT event_date, country, product_views, cart_adds, checkouts_started,
+       orders_created, payments_completed, view_to_cart_rate,
+       cart_to_checkout_rate, checkout_to_order_rate, order_to_payment_rate
+FROM marts.funnel_performance
+ORDER BY event_date, country;
+```
+
+Current limitations: customer/product cards are lifetime unit rankings; date,
+country, and currency filters do not apply to them. Authentication
+and database traffic are unencrypted local-development connections, Metabase
+uses the existing broad local warehouse user rather than a dedicated read-only
+role, and no currency conversion or country-revenue mart exists yet.
+
 ## Airflow orchestration
 
 Apache Airflow 2.11.2 runs entirely in Docker; no native Windows Airflow
@@ -309,9 +410,9 @@ docker compose exec airflow-scheduler airflow dags trigger pulse_analytics_pipel
 The Airflow containers mount `airflow/dags`, `src`, `dbt`, and `data`. Project-relative
 host data is exposed as `/opt/pulse/data`; source is exposed read-only at
 `/opt/pulse/src`, and the dbt project is exposed read-only at `/opt/pulse/dbt`.
-Airflow logs, Airflow metadata, and warehouse database files
-use separate Docker named volumes; generated pipeline data and database dumps
-remain covered by `.gitignore`.
+Airflow logs, Airflow metadata, warehouse data, and Metabase metadata use
+separate Docker named volumes; generated pipeline data and database dumps remain
+covered by `.gitignore`.
 
 This phase has no automatic schedule (`schedule=None`), permits only one active
 DAG run, and gives each task one short retry. Silver orchestration is a full

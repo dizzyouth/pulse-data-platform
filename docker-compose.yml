@@ -151,6 +151,78 @@ services:
       retries: 10
     restart: unless-stopped
 
+  metabase-postgres:
+    image: postgres:16.4-alpine
+    container_name: pulse-metabase-postgres
+    environment:
+      POSTGRES_USER: ${METABASE_DB_USER:-metabase}
+      POSTGRES_PASSWORD: ${METABASE_DB_PASSWORD:-metabase-local-development-only}
+      POSTGRES_DB: ${METABASE_DB_NAME:-pulse_metabase}
+    volumes:
+      - metabase-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${METABASE_DB_USER:-metabase} -d ${METABASE_DB_NAME:-pulse_metabase}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  metabase:
+    image: metabase/metabase:v0.63.16.5
+    container_name: pulse-metabase
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: metabase-postgres
+      MB_DB_PORT: 5432
+      MB_DB_DBNAME: ${METABASE_DB_NAME:-pulse_metabase}
+      MB_DB_USER: ${METABASE_DB_USER:-metabase}
+      MB_DB_PASS: ${METABASE_DB_PASSWORD:-metabase-local-development-only}
+      MB_SESSION_SECRET_KEY: ${METABASE_SESSION_SECRET_KEY:-PulseSessionLocalOnly4xN7qB2v2026}
+      MB_ANON_TRACKING_ENABLED: "false"
+      MB_CHECK_FOR_UPDATES: "false"
+      MB_LOAD_SAMPLE_CONTENT: "false"
+      MB_INSTALL_ANALYTICS_DATABASE: "false"
+      MB_AI_FEATURES_ENABLED: "false"
+      MB_JETTY_MAXTHREADS: 20
+      MB_ASYNC_QUERY_THREAD_POOL_SIZE: 10
+      JAVA_OPTS: -Xms128m -Xmx512m
+      JAVA_TIMEZONE: UTC
+    depends_on:
+      metabase-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    restart: unless-stopped
+
+  metabase-setup:
+    image: python:3.12.10-alpine3.21
+    environment:
+      METABASE_URL: http://metabase:3000
+      METABASE_ADMIN_EMAIL: ${METABASE_ADMIN_EMAIL:-admin@pulse.local}
+      METABASE_ADMIN_PASSWORD: ${METABASE_ADMIN_PASSWORD:-PulseLocal!4xN7qB2v}
+      METABASE_SITE_NAME: ${METABASE_SITE_NAME:-Pulse Analytics}
+      METABASE_WAREHOUSE_NAME: ${METABASE_WAREHOUSE_NAME:-Pulse Analytics Warehouse}
+      METABASE_WAREHOUSE_HOST: warehouse-postgres
+      METABASE_WAREHOUSE_PORT: 5432
+      METABASE_WAREHOUSE_DB: ${WAREHOUSE_DB:-pulse_analytics}
+      METABASE_WAREHOUSE_USER: ${WAREHOUSE_USER:-pulse}
+      METABASE_WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-pulse-local-development-only}
+    volumes:
+      - ./bi:/opt/pulse/bi:ro
+    command: ["python", "/opt/pulse/bi/setup_metabase.py"]
+    depends_on:
+      metabase:
+        condition: service_healthy
+      warehouse-postgres:
+        condition: service_healthy
+    restart: "no"
+
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
@@ -210,4 +282,5 @@ volumes:
   kafka-data:
   airflow-postgres-data:
   warehouse-postgres-data:
+  metabase-postgres-data:
   airflow-logs:
