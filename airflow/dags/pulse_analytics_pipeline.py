@@ -42,30 +42,36 @@ with DAG(
         ),
         cwd=PROJECT_ROOT,
     )
-    validate_silver = BashOperator(
-        task_id="validate_silver",
-        bash_command="python -m src.orchestration.validation silver",
+    quality_check_silver = BashOperator(
+        task_id="quality_check_silver",
+        bash_command="python -m src.quality.runner silver --block-on-critical --log-format jsonl",
         cwd=PROJECT_ROOT,
+        trigger_rule="all_success",
+        do_xcom_push=False,
     )
     build_gold = BashOperator(
         task_id="build_gold",
         bash_command="python -m src.analytics.gold_build",
         cwd=PROJECT_ROOT,
     )
-    validate_gold = BashOperator(
-        task_id="validate_gold",
-        bash_command="python -m src.orchestration.validation gold",
+    quality_check_gold = BashOperator(
+        task_id="quality_check_gold",
+        bash_command="python -m src.quality.runner gold --block-on-critical --log-format jsonl",
         cwd=PROJECT_ROOT,
+        trigger_rule="all_success",
+        do_xcom_push=False,
     )
     load_gold_to_warehouse = BashOperator(
         task_id="load_gold_to_warehouse",
         bash_command="python -m src.warehouse.load_gold load",
         cwd=PROJECT_ROOT,
     )
-    validate_warehouse = BashOperator(
-        task_id="validate_warehouse",
-        bash_command="python -m src.warehouse.load_gold validate",
+    quality_check_warehouse = BashOperator(
+        task_id="quality_check_warehouse",
+        bash_command="python -m src.quality.runner warehouse --block-on-critical --log-format jsonl",
         cwd=PROJECT_ROOT,
+        trigger_rule="all_success",
+        do_xcom_push=False,
     )
     run_dbt = BashOperator(
         task_id="run_dbt",
@@ -81,11 +87,11 @@ with DAG(
     (
         check_bronze_available
         >> build_silver
-        >> validate_silver
+        >> quality_check_silver
         >> build_gold
-        >> validate_gold
+        >> quality_check_gold
         >> load_gold_to_warehouse
-        >> validate_warehouse
+        >> quality_check_warehouse
         >> run_dbt
         >> test_dbt
     )

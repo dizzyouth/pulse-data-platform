@@ -55,6 +55,7 @@ class FakeDag:
 class FakeBashOperator:
     def __init__(self, *, task_id: str, **_kwargs) -> None:
         self.task_id = task_id
+        self.kwargs = _kwargs
         self.downstream_task_ids: set[str] = set()
         if FakeDag.active is not None:
             FakeDag.active.task_dict[task_id] = self
@@ -103,6 +104,18 @@ class AirflowDagContractTests(unittest.TestCase):
         self.assertEqual(actual_dependencies, set(TASK_DEPENDENCIES))
         self.assertGreaterEqual(TASK_RETRIES, 0)
         self.assertLessEqual(TASK_RETRIES, 2)
+        self.assertEqual(TASK_IDS, (
+            "check_bronze_available", "build_silver", "quality_check_silver",
+            "build_gold", "quality_check_gold", "load_gold_to_warehouse",
+            "quality_check_warehouse", "run_dbt", "test_dbt",
+        ))
+        for target in ("silver", "gold", "warehouse"):
+            task = module.dag.task_dict[f"quality_check_{target}"]
+            self.assertEqual(task.kwargs["bash_command"],
+                             f"python -m src.quality.runner {target} --block-on-critical --log-format jsonl")
+            self.assertEqual(task.kwargs["cwd"], "/opt/pulse")
+            self.assertEqual(task.kwargs["trigger_rule"], "all_success")
+            self.assertFalse(task.kwargs["do_xcom_push"])
 
 
 @unittest.skipUnless(os.environ.get("RUN_SPARK_TESTS", "1") == "1", "Spark tests disabled")

@@ -9,11 +9,11 @@ TASK_RETRY_DELAY_MINUTES = 1
 TASK_IDS = (
     "check_bronze_available",
     "build_silver",
-    "validate_silver",
+    "quality_check_silver",
     "build_gold",
-    "validate_gold",
+    "quality_check_gold",
     "load_gold_to_warehouse",
-    "validate_warehouse",
+    "quality_check_warehouse",
     "run_dbt",
     "test_dbt",
 )

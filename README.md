@@ -32,13 +32,16 @@ explicit opt-in guard and a documented reason.
 | `WarehouseContractTests` | FAST / CI-SAFE | Schema, column, and connection configuration contracts; no database. |
 | `test_dbt_project`, `test_bi_config`, `test_ci_config` | FAST / CI-SAFE | Static project/lineage, BI SQL/configuration, mocked provisioning, and CI policy checks; no Metabase or browser. |
 | `test_quality` | FAST / CI-SAFE | Typed results, reusable Spark checks, temporary Parquet CLI fixtures, and bounded snapshot reconciliation; no running services. |
+| `QualityBoundaryTests`, `QualityBoundarySparkTests` | FAST / CI-SAFE | Runner policy selection, exit codes, JSON logs, and real Spark checks over warehouse snapshot fixtures with mocked database I/O. |
 | Windows helper and cleanup-retry unit tests | FAST / CI-SAFE | Mocked OS/retry behavior runs on both systems. Linux helpers leave environment and builder untouched; no Windows native binaries are loaded. |
 | `WarehouseIntegrationTests` (two tests) | FULL INTEGRATION | Requires a populated local PostgreSQL warehouse and matching Gold Parquet. Tests refresh the configured warehouse and verify reruns/rollback. |
+| `WarehouseQualityIntegrationTests` (one test) | FULL INTEGRATION | Read-only quality validation of all four populated local warehouse tables. |
+| `AirflowQualityExecutionTests` (three tests, seven scenarios) | FULL INTEGRATION | Airflow image and isolated SQLite metadata database; actual DAG dependency handling with controlled quality results. |
 | Live Kafka ingestion, complete Airflow DAG, dbt execution, Metabase API/dashboard/browser, native Windows Hadoop loading | FULL INTEGRATION | Manual local acceptance checks require running services, populated data, or Windows native files. These are not additional hidden unittest skips. |
 
 CI explicitly sets `RUN_SPARK_TESTS=1` and
-`RUN_WAREHOUSE_INTEGRATION_TESTS=0`. Only the two warehouse integration methods
-are skipped. Spark tests remain enabled by default locally. The existing
+`RUN_WAREHOUSE_INTEGRATION_TESTS=0`. The three warehouse integration methods and
+three opt-in Airflow execution tests are skipped. Spark tests remain enabled by default locally. The existing
 `RUN_SPARK_TESTS=0` option is useful for a quick non-Spark development check, but
 is not equivalent to CI. Windows setup remains documented below.
 
@@ -155,7 +158,8 @@ delivery, scheduler execution, dashboard rendering, or native Windows Hadoop.
 
 `src/quality/` provides read-only assessment of Spark **batch DataFrames**. It
 returns typed results in memory, with optional JSON output. It does not modify
-datasets, write monitoring tables, or change the Airflow DAG. Existing Python
+datasets or write monitoring tables. Phase 5.2 integrates it into the Airflow DAG
+as described below. Existing Python
 3.12 / Java 17 dependencies and unittest discovery are sufficient; no new
 packages, services, or CI workflows are required.
 
@@ -165,7 +169,7 @@ and deduplicates events; Gold validates aggregate sanity; PostgreSQL enforces
 its serving schema and transactional checks; dbt tests its sources and marts.
 The quality framework adds reusable measurements, consistent result reporting,
 configurable thresholds, and snapshot reconciliation. It does not replace the
-transformation rules or add another automatic blocking stage.
+transformation rules; Phase 5.2 adds automatic quality gates around them.
 
 ### API and result contract
 
@@ -312,13 +316,109 @@ shuffles remain development-scale limitations. Timestamp freshness requires a
 Spark timestamp with instant semantics; timestamp-without-time-zone and strings
 must be explicitly normalized by the caller.
 
-New deterministic Spark tests use temporary/in-memory fixtures and are included
-automatically by existing CI discovery with `RUN_SPARK_TESTS=1`. No service-based
-test has been added. Phase 5.2 will integrate orchestration/observability more
-deeply; Phase 5.3 will persist results separately from this engine. Monitoring
+Deterministic Spark tests use temporary/in-memory fixtures and are included
+automatically by existing CI discovery with `RUN_SPARK_TESTS=1`. Phase 5.2 adds
+optional live warehouse and isolated Airflow integration tests. Phase 5.3 will
+persist results separately from this engine. Monitoring
 tables, dashboards, external alerts, catalogs/lineage, third-party quality
 platforms, statistical baselines, and ML anomaly detection are intentionally
 deferred.
+
+## Data Quality Orchestration & Observability (Phase 5.2)
+
+The manual `pulse_analytics_pipeline` now runs the Phase 5.1 engine at three
+boundaries:
+
+```text
+check_bronze_available -> build_silver -> quality_check_silver
+  -> build_gold -> quality_check_gold
+  -> load_gold_to_warehouse -> quality_check_warehouse -> run_dbt -> test_dbt
+```
+
+The quality tasks replace the former `validate_silver`, `validate_gold`, and
+`validate_warehouse` DAG tasks. Their standalone validation helpers remain
+available. Transformation checks, transactional warehouse loading, dbt commands,
+the manual schedule, one retry, and one active DAG run retain their existing
+behavior. In particular, the former Silver validator's empty-data failure is
+replaced by the Phase 5.1 empty-Silver **WARNING** policy. A later transformation
+or warehouse load can still fail its own existing contract.
+
+All three tasks execute `python -m src.quality.runner` with
+`--block-on-critical --log-format jsonl`. The runner selects `silver_rules()` for
+`silver` / `silver_valid`, each table's `gold_rules(name)` for `gold`, and
+`gold_rules(name, layer="analytics")` for `warehouse`. Gold and warehouse targets
+check all four tables. Warehouse results use `layer="analytics"`, matching the
+existing policy and PostgreSQL schema. No rules live in the DAG.
+
+| Severity | Result when an expectation is violated | Airflow behavior |
+| --- | --- | --- |
+| INFO | Record WARN as an observation | Continue |
+| WARNING | Record WARN | Continue |
+| CRITICAL | Record FAIL | CLI exits 1; task fails, subject to the existing one retry |
+
+A satisfied rule is PASS at any severity. The Phase 5.1 undefined-metric WARN
+semantics are unchanged: severity alone does not fail a task. A critical FAIL
+blocks downstream tasks through Airflow's `all_success` dependencies. While a
+retry is pending downstream work waits; after retries are exhausted it becomes
+`upstream_failed`, including the subsequent warehouse/dbt steps. Results are
+logged before the process exits. Unreadable data, invalid schemas, connection
+errors, and Spark failures also fail the task; they are never converted to a pass.
+
+In the Airflow UI, open the DAG run, select a `quality_check_*` task, and open
+**Logs** for the relevant attempt. Search for `quality_result` and
+`quality_summary`. Each result is one flushed JSON line containing dataset,
+layer, check name, severity, status, observed/expected values, metric, UTC
+timestamp, and check details. The final summary includes explicit
+`counts: {"PASS": ..., "WARN": ..., "FAIL": ...}`, total checks, critical failures,
+and overall quality status. Counts describe this task attempt; retries are
+separate executions. An operational exception emits `quality_execution_error`
+and a summary with `completed=false`; those counts cover only checks completed
+before the exception and do not certify the whole target. JSON events can be
+extracted from the Airflow log prefix for future persistence. No result tables,
+external monitoring services, or new XCom payloads are introduced.
+
+Run the same gates locally from the repository root with the virtual environment
+active, or substitute `docker compose exec airflow-scheduler python` for `python`:
+
+```text
+python -m src.quality.runner silver --block-on-critical --log-format jsonl
+python -m src.quality.runner gold --block-on-critical --log-format jsonl
+python -m src.quality.runner warehouse --block-on-critical --log-format jsonl
+python -m src.quality.runner daily_sales --path data/gold/daily_sales --block-on-critical
+python -m unittest tests.test_quality tests.test_quality_orchestration tests.test_orchestration -v
+python -m unittest discover -s tests -v
+```
+
+Single-dataset CLI commands and the default JSON report remain compatible with
+Phase 5.1; omitting `--block-on-critical` remains explicitly report-only. Path,
+freshness, and volume overrides apply to individual datasets; `gold` and
+`warehouse` reject ambiguous group overrides. No historical freshness SLA or
+volume baseline is invented. Snapshot reconciliation remains an explicit API
+operation; the DAG does not assume independently captured Bronze/Silver reads
+represent the same snapshot.
+
+The warehouse adapter uses the existing `WAREHOUSE_*` connection settings and a
+read-only, repeatable-read PostgreSQL transaction across the four `analytics`
+tables. It checks column/type contracts and streams rows with server cursors to
+temporary JSONL files. Explicit Spark schemas preserve empty tables, dates,
+timestamps, and nullable values; the same Spark engine then checks uniqueness,
+completeness, counts, bounds, and rates. Temporary files are removed after
+evaluation, including on failures. This avoids collecting the warehouse in Python
+memory and requires no JDBC driver, but needs temporary disk space proportional
+to the warehouse snapshot and assumes the existing local Spark deployment.
+As with the existing DAG, avoid concurrent standalone writers.
+
+CI automatically discovers the service-independent policy, logging, and DAG
+contract tests. `RUN_WAREHOUSE_INTEGRATION_TESTS=1` additionally runs a read-only
+quality check against the populated local warehouse (the existing warehouse
+integration suite also tests refresh/rollback). The optional
+`tests.test_airflow_quality_integration` runs the actual DAG graph, BashOperator,
+CLI, and Airflow dependency handling with controlled quality observations. Run
+it inside the Airflow image with `RUN_AIRFLOW_INTEGRATION_TESTS=1`, a temporary
+`AIRFLOW_HOME`, and an isolated SQLite `AIRFLOW__DATABASE__SQL_ALCHEMY_CONN`, after
+`airflow db migrate`. It verifies INFO/WARNING continuation and CRITICAL blocking
+at all three boundaries without rebuilding platform data. Native Windows and
+the Ubuntu CI suite skip those Airflow-only tests.
 
 ## Local Spark on Windows
 
@@ -688,11 +788,11 @@ not started or supervised by this DAG. The manually triggered
 ```text
 check_bronze_available
   -> build_silver
-  -> validate_silver
+  -> quality_check_silver
   -> build_gold
-  -> validate_gold
+  -> quality_check_gold
   -> load_gold_to_warehouse
-  -> validate_warehouse
+  -> quality_check_warehouse
   -> run_dbt
   -> test_dbt
 ```
