@@ -37,11 +37,14 @@ explicit opt-in guard and a documented reason.
 | `WarehouseIntegrationTests` (two tests) | FULL INTEGRATION | Requires a populated local PostgreSQL warehouse and matching Gold Parquet. Tests refresh the configured warehouse and verify reruns/rollback. |
 | `WarehouseQualityIntegrationTests` (one test) | FULL INTEGRATION | Read-only quality validation of all four populated local warehouse tables. |
 | `AirflowQualityExecutionTests` (three tests, seven scenarios) | FULL INTEGRATION | Airflow image and isolated SQLite metadata database; actual DAG dependency handling with controlled quality results. |
+| `test_quality_persistence` | FAST / CI-SAFE | Execution identity, JSON types, optional sink, and persistence/summary/blocking order with mocked database I/O. |
+| `MonitoringPostgresTests` (seven tests) | FULL INTEGRATION | `RUN_MONITORING_INTEGRATION_TESTS=1`; creates and removes its own disposable PostgreSQL database to verify DDL, FK, transactions, JSONB, retries, and concurrent writes. |
 | Live Kafka ingestion, complete Airflow DAG, dbt execution, Metabase API/dashboard/browser, native Windows Hadoop loading | FULL INTEGRATION | Manual local acceptance checks require running services, populated data, or Windows native files. These are not additional hidden unittest skips. |
 
 CI explicitly sets `RUN_SPARK_TESTS=1` and
 `RUN_WAREHOUSE_INTEGRATION_TESTS=0`. The three warehouse integration methods and
-three opt-in Airflow execution tests are skipped. Spark tests remain enabled by default locally. The existing
+three opt-in Airflow execution tests are skipped, along with the seven opt-in
+monitoring PostgreSQL tests. Spark tests remain enabled by default locally. The existing
 `RUN_SPARK_TESTS=0` option is useful for a quick non-Spark development check, but
 is not equivalent to CI. Windows setup remains documented below.
 
@@ -158,7 +161,8 @@ delivery, scheduler execution, dashboard rendering, or native Windows Hadoop.
 
 `src/quality/` provides read-only assessment of Spark **batch DataFrames**. It
 returns typed results in memory, with optional JSON output. It does not modify
-datasets or write monitoring tables. Phase 5.2 integrates it into the Airflow DAG
+datasets. The calculation API does not write monitoring tables; Phase 5.3 adds
+an optional persistence adapter. Phase 5.2 integrates it into the Airflow DAG
 as described below. Existing Python
 3.12 / Java 17 dependencies and unittest discovery are sufficient; no new
 packages, services, or CI workflows are required.
@@ -318,9 +322,9 @@ must be explicitly normalized by the caller.
 
 Deterministic Spark tests use temporary/in-memory fixtures and are included
 automatically by existing CI discovery with `RUN_SPARK_TESTS=1`. Phase 5.2 adds
-optional live warehouse and isolated Airflow integration tests. Phase 5.3 will
-persist results separately from this engine. Monitoring
-tables, dashboards, external alerts, catalogs/lineage, third-party quality
+optional live warehouse and isolated Airflow integration tests. Phase 5.3
+persists results separately from this engine. Dashboards, external alerts,
+catalogs/lineage, third-party quality
 platforms, statistical baselines, and ML anomaly detection are intentionally
 deferred.
 
@@ -344,7 +348,8 @@ replaced by the Phase 5.1 empty-Silver **WARNING** policy. A later transformatio
 or warehouse load can still fail its own existing contract.
 
 All three tasks execute `python -m src.quality.runner` with
-`--block-on-critical --log-format jsonl`. The runner selects `silver_rules()` for
+`--block-on-critical --log-format jsonl --persist` (persistence added in Phase 5.3).
+The runner selects `silver_rules()` for
 `silver` / `silver_valid`, each table's `gold_rules(name)` for `gold`, and
 `gold_rules(name, layer="analytics")` for `warehouse`. Gold and warehouse targets
 check all four tables. Warehouse results use `layer="analytics"`, matching the
@@ -374,8 +379,8 @@ and overall quality status. Counts describe this task attempt; retries are
 separate executions. An operational exception emits `quality_execution_error`
 and a summary with `completed=false`; those counts cover only checks completed
 before the exception and do not certify the whole target. JSON events can be
-extracted from the Airflow log prefix for future persistence. No result tables,
-external monitoring services, or new XCom payloads are introduced.
+extracted from the Airflow log prefix. Phase 5.3 adds result tables as described
+below; external monitoring services and new XCom payloads remain unnecessary.
 
 Run the same gates locally from the repository root with the virtual environment
 active, or substitute `docker compose exec airflow-scheduler python` for `python`:
@@ -419,6 +424,127 @@ it inside the Airflow image with `RUN_AIRFLOW_INTEGRATION_TESTS=1`, a temporary
 `airflow db migrate`. It verifies INFO/WARNING continuation and CRITICAL blocking
 at all three boundaries without rebuilding platform data. Native Windows and
 the Ubuntu CI suite skip those Airflow-only tests.
+
+## Data Quality Observability & Persistence (Phase 5.3)
+
+Quality history lives in the existing warehouse database's **monitoring** schema,
+separate from `analytics` serving tables, `marts` views, and the separate Airflow
+metadata database. There are two tables and no new service or dependency:
+
+| Table | Grain and contents |
+| --- | --- |
+| `monitoring.quality_runs` | One completed dataset/layer assessment per execution attempt. UUID primary key; execution source/ID; DAG, Airflow run and task IDs; attempt number, map index, logical timestamp; dataset/layer; start/completion timestamps; overall status, total/PASS/WARN/FAIL counts, critical count, and `should_block`. |
+| `monitoring.quality_results` | One check per run. UUID primary key, run UUID foreign key, unique `(quality_run_id, check_name)`, check/metric names, status/severity, observed and expected JSONB values, UTC check timestamp, and JSONB details. |
+
+Times use `TIMESTAMPTZ`; counts and attempts use integers; `should_block` is a
+boolean. JSONB preserves numeric, string, boolean, structured, and null values.
+Constraints enforce valid statuses/severities, consistent summary counts and
+blocking decisions, and ordered timestamps. Indexes support completion time,
+dataset/layer/time, layer/time, and status/time. The unique run/check index also
+supports the foreign key and run-result joins. A partial index on check time
+supports recent CRITICAL FAIL queries without indexing every status/severity.
+
+`src/quality/execution.py` defines database-independent execution envelopes.
+`src/quality/persistence.py` owns PostgreSQL writes, using the existing warehouse
+connection helper and `WAREHOUSE_*` settings. `checks.py`, policies, and
+`run_quality_checks` retain their in-memory behavior. The runner's optional
+dataset-completion callback is the integration point; it also supports other
+sinks without changing check calculation.
+
+For each completed dataset, the runner calculates results, persists the run and
+checks, emits a `quality_persisted` event with its UUID, and emits check logs.
+After the target is processed it logs the summary and applies the existing
+blocking policy. Thus a CRITICAL FAIL is committed **before** the summary and
+nonzero exit that blocks Airflow downstream tasks. INFO/WARNING continue; PASS,
+WARN, and FAIL executions are all persisted. Gold and warehouse tasks each
+produce four dataset runs; Silver produces one. Warehouse uses layer `analytics`.
+
+Run upsert, scoped replacement of that run's checks, and all result inserts share
+one transaction. A result-insert failure rolls everything back, retaining the
+previous complete version if one existed. Concurrent writes for the same run
+serialize on its parent row. Schema initialization uses repeatable
+`CREATE ... IF NOT EXISTS` statements in `src/quality/monitoring.sql`, protected
+by a transaction advisory lock against concurrent initialization races. It runs
+in its own short transaction before persistence. No Alembic or destructive
+schema rebuild is introduced; future schema changes will need explicit upgrades.
+
+### Execution identity and retries
+
+The UUID is deterministically generated from source, execution ID, DAG/run/task,
+mapped-task index, attempt number, dataset, and layer. Airflow exports DAG/run/task
+context; the DAG passes templated attempt number, map index, and logical date
+through the environment with `append_env=True`. Context is never interpolated
+into shell commands or SQL. Incomplete Airflow identity fails explicitly.
+
+Repeated writes for **the same attempt** update one run and replace only its
+checks, including removal of obsolete checks. A genuine retry gets one separate
+attempt record, preserving an earlier critical failure even if the retry passes.
+Normal retries therefore create at most one record per dataset per actual
+attempt, rather than one record per insert. A manual task clear/re-execution that
+increments Airflow's attempt number also creates a new attempt. There is no
+automatic deletion of history. Query trends can include all attempts or select
+the latest attempt per logical execution, depending on the desired measure.
+
+Local persistence is **off by default**, including under unittest/CI. `--persist`
+uses source `cli` and a new execution UUID unless `--execution-id` is supplied.
+Reuse that explicit ID to rewrite the same local attempt; use `--attempt-number`
+with the same ID to retain separate attempts. Omit persistence for report-only
+development; `--block-on-critical` still independently controls quality exit codes.
+
+```text
+python -m src.quality.runner silver --persist --block-on-critical --log-format jsonl
+python -m src.quality.runner gold --persist --execution-id local-review-001
+python -m src.quality.runner gold --persist --execution-id local-review-001
+python -m src.quality.runner gold --persist --execution-id local-review-001 --attempt-number 2
+python -m src.quality.runner warehouse --persist --block-on-critical --log-format jsonl
+python -m src.quality.persistence
+```
+
+The final command only ensures the monitoring schema/tables exist. Host commands
+use the existing host warehouse settings; Compose runs use the container settings.
+No new passwords or CI secrets are required. Initialization requires schema/table
+creation rights. Persistence errors expose a sanitized message, fail the task,
+and are not silently ignored even if quality passed. They do not log connection
+settings or PostgreSQL diagnostics that might contain sensitive values.
+
+### Queries, validation, and limits
+
+[`monitoring/queries.sql`](monitoring/queries.sql) provides: latest quality status
+per layer across each dataset's latest completed Airflow assessment; daily warning
+and failure counts; frequently failing checks; recent critical failures; and one
+dataset's history with duration. Run it in a PostgreSQL SQL client connected to
+the warehouse, or from PowerShell:
+
+```powershell
+Get-Content monitoring/queries.sql | docker compose exec -T warehouse-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1'
+python -m unittest tests.test_quality_persistence tests.test_orchestration.AirflowDagContractTests -v
+$env:RUN_MONITORING_INTEGRATION_TESTS = '1'
+python -m unittest tests.test_monitoring_postgres -v
+```
+
+PostgreSQL tests require permission to create/drop their own uniquely named
+disposable test database; they never clear existing monitoring history. Existing
+Airflow execution tests can additionally enable `RUN_MONITORING_INTEGRATION_TESTS=1`
+to use real persistence and verify committed rows before summaries. Run those
+with isolated Airflow metadata and a dedicated test warehouse database. The usual
+CI discovery keeps database/Airflow tests opt-in and adds no services or secrets.
+
+Timing measures quality calculation for each dataset, not the entire task's Spark
+startup, snapshot extraction, persistence, or whole pipeline duration. Completed
+dataset writes are independent: if a later dataset fails operationally, earlier
+completed datasets remain queryable. Calculation failures before completion and
+unavailable persistence are still observable in Airflow logs, but have no fabricated
+completed monitoring record. Latest completed status alone cannot prove freshness
+or detect an absent run; queries expose timestamps and dataset coverage for that
+reason. Rewriting the same attempt retains its last committed assessment, not
+every write; concurrent rewrites use the same last-committer-wins behavior.
+
+`pipeline_runs` is deliberately deferred: Airflow remains authoritative for DAG
+start/end/state, and quality rows already retain correlation IDs and timing.
+Monitoring history grows over time; automatic retention is deferred to operational
+hardening. Phase 5.4 and later can build monitoring dashboards and alerting on this
+history. This phase adds no Metabase dashboards, external observability platform,
+notifications, statistical baselines, ML anomaly detection, or lineage system.
 
 ## Local Spark on Windows
 

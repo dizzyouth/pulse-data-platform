@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 import os
 
@@ -16,6 +17,7 @@ from src.quality.models import (
     CheckDetails, Freshness, QualityContext, QualityResult, Rule, Severity,
     Uniqueness, VolumeChange, report_json, should_block,
 )
+from src.quality.execution import DatasetQualityRun
 
 
 def run_quality_checks(
@@ -77,16 +79,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-volume-change", type=float, help="relative deviation fraction (default 0.2 = 20%%); requires --reference-count")
     parser.add_argument("--block-on-critical", action="store_true", help="exit 1 on critical quality failures; default is report-only")
     parser.add_argument("--log-format", choices=("json", "jsonl"), default="json", help="JSON report (default) or flushed per-check log events and summary")
+    parser.add_argument("--persist", action="store_true", help="persist each dataset execution to the warehouse monitoring schema")
+    parser.add_argument("--execution-id", help="stable local execution key for idempotent rewrites; requires --persist")
+    parser.add_argument("--attempt-number", type=int, help="local attempt number (default 1); requires --persist and --execution-id")
     return parser
 
 
 def iter_target_results(spark, target: str, *, path: Path | None = None,
-                        extra_rules: Sequence[Rule] = (), reference_count: int | None = None):
+                        extra_rules: Sequence[Rule] = (), reference_count: int | None = None,
+                        on_dataset_complete: Callable[[DatasetQualityRun], None] | None = None):
     """Select the same Phase 5.1 policies for every caller; emit each dataset's results."""
     from src.analytics.gold_build import load_gold_paths
     from src.streaming.silver_streaming import load_silver_paths
     from src.quality.datasets import GOLD_GRAINS, gold_rules, silver_rules
     from src.utils.parquet import read_parquet_data_files
+
+    def assess(frame, rules, context):
+        results = run_quality_checks(frame, rules, context)
+        if on_dataset_complete is not None:
+            on_dataset_complete(DatasetQualityRun(
+                dataset_name=context.dataset_name, layer=context.layer,
+                started_at_utc=context.checked_at_utc, completed_at_utc=datetime.now(timezone.utc),
+                results=tuple(results),
+            ))
+        return results
 
     if target in ("gold", "warehouse") and (path is not None or extra_rules or reference_count is not None):
         raise ValueError("Path and optional thresholds require a single dataset")
@@ -94,7 +110,7 @@ def iter_target_results(spark, target: str, *, path: Path | None = None,
         from src.quality.warehouse import warehouse_frames
         with warehouse_frames(spark) as frames:
             for name, frame in frames.items():
-                yield from run_quality_checks(frame, gold_rules(name, layer="analytics"),
+                yield from assess(frame, gold_rules(name, layer="analytics"),
                                               QualityContext(dataset_name=name, layer="analytics"))
         return
     names = tuple(GOLD_GRAINS) if target == "gold" else ("silver_valid" if target == "silver" else target,)
@@ -102,13 +118,17 @@ def iter_target_results(spark, target: str, *, path: Path | None = None,
         layer = "silver" if name == "silver_valid" else "gold"
         rules = (*silver_rules(), *extra_rules) if layer == "silver" else (*gold_rules(name), *extra_rules)
         source = path or (load_silver_paths().valid if layer == "silver" else getattr(load_gold_paths(), name))
-        yield from run_quality_checks(read_parquet_data_files(spark, source.resolve()), rules,
+        yield from assess(read_parquet_data_files(spark, source.resolve()), rules,
                                       QualityContext(dataset_name=name, layer=layer, reference_count=reference_count))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if (args.execution_id is not None or args.attempt_number is not None) and not args.persist:
+        parser.error("execution identity options require --persist")
+    if args.attempt_number is not None and args.execution_id is None:
+        parser.error("--attempt-number requires --execution-id")
     if args.max_volume_change is not None and args.reference_count is None:
         parser.error("--max-volume-change requires --reference-count")
     if args.dataset in ("gold", "warehouse") and any(value is not None for value in
@@ -134,10 +154,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     spark = None
     results = []
     try:
+        execution_options = {}
+        if args.persist:
+            from src.quality.execution import execution_context
+            from src.quality.persistence import persist_quality_run
+            context = execution_context(execution_id=args.execution_id, attempt_number=args.attempt_number)
+
+            def persist(run):
+                run_id = persist_quality_run(run, context)
+                if args.log_format == "jsonl":
+                    emit_event("quality_persisted", quality_run_id=str(run_id), dataset_name=run.dataset_name,
+                               layer=run.layer, attempt_number=context.attempt_number)
+
+            execution_options["on_dataset_complete"] = persist
         spark = build_gold_spark_session(app_name="pulse-data-quality", master=os.getenv("SPARK_MASTER", "local[2]"))
         spark.sparkContext.setLogLevel("ERROR")
         for result in iter_target_results(spark, args.dataset, path=args.path,
-                                          extra_rules=rules, reference_count=args.reference_count):
+                                          extra_rules=rules, reference_count=args.reference_count, **execution_options):
             results.append(result)
             if args.log_format == "jsonl":
                 log_result(result)

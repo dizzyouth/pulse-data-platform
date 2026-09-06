@@ -112,10 +112,16 @@ class AirflowDagContractTests(unittest.TestCase):
         for target in ("silver", "gold", "warehouse"):
             task = module.dag.task_dict[f"quality_check_{target}"]
             self.assertEqual(task.kwargs["bash_command"],
-                             f"python -m src.quality.runner {target} --block-on-critical --log-format jsonl")
+                             f"python -m src.quality.runner {target} --block-on-critical --log-format jsonl --persist")
             self.assertEqual(task.kwargs["cwd"], "/opt/pulse")
             self.assertEqual(task.kwargs["trigger_rule"], "all_success")
             self.assertFalse(task.kwargs["do_xcom_push"])
+            self.assertTrue(task.kwargs["append_env"])
+            self.assertEqual(task.kwargs["env"], {
+                "QUALITY_ATTEMPT_NUMBER": "{{ ti.try_number }}",
+                "QUALITY_MAP_INDEX": "{{ ti.map_index }}",
+                "QUALITY_LOGICAL_DATE": "{{ ts }}",
+            })
 
 
 @unittest.skipUnless(os.environ.get("RUN_SPARK_TESTS", "1") == "1", "Spark tests disabled")

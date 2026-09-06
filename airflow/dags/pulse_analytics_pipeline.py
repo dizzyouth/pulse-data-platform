@@ -15,6 +15,11 @@ from src.orchestration.dag_config import (
 )
 
 PROJECT_ROOT = "/opt/pulse"
+QUALITY_EXECUTION_ENV = {
+    "QUALITY_ATTEMPT_NUMBER": "{{ ti.try_number }}",
+    "QUALITY_MAP_INDEX": "{{ ti.map_index }}",
+    "QUALITY_LOGICAL_DATE": "{{ ts }}",
+}
 
 with DAG(
     dag_id=DAG_ID,
@@ -44,10 +49,12 @@ with DAG(
     )
     quality_check_silver = BashOperator(
         task_id="quality_check_silver",
-        bash_command="python -m src.quality.runner silver --block-on-critical --log-format jsonl",
+        bash_command="python -m src.quality.runner silver --block-on-critical --log-format jsonl --persist",
         cwd=PROJECT_ROOT,
         trigger_rule="all_success",
         do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV,
+        append_env=True,
     )
     build_gold = BashOperator(
         task_id="build_gold",
@@ -56,10 +63,12 @@ with DAG(
     )
     quality_check_gold = BashOperator(
         task_id="quality_check_gold",
-        bash_command="python -m src.quality.runner gold --block-on-critical --log-format jsonl",
+        bash_command="python -m src.quality.runner gold --block-on-critical --log-format jsonl --persist",
         cwd=PROJECT_ROOT,
         trigger_rule="all_success",
         do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV,
+        append_env=True,
     )
     load_gold_to_warehouse = BashOperator(
         task_id="load_gold_to_warehouse",
@@ -68,10 +77,12 @@ with DAG(
     )
     quality_check_warehouse = BashOperator(
         task_id="quality_check_warehouse",
-        bash_command="python -m src.quality.runner warehouse --block-on-critical --log-format jsonl",
+        bash_command="python -m src.quality.runner warehouse --block-on-critical --log-format jsonl --persist",
         cwd=PROJECT_ROOT,
         trigger_rule="all_success",
         do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV,
+        append_env=True,
     )
     run_dbt = BashOperator(
         task_id="run_dbt",
