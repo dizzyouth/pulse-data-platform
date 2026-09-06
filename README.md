@@ -1,5 +1,155 @@
 # Pulse Data Platform
 
+## CI/CD and automated quality gates
+
+Phase 4.5 adds validation only. [CI](https://github.com/dizzyouth/pulse-data-platform/actions/workflows/ci.yml)
+runs for pull requests and pushes to `main`, with no path filters or deployment.
+The single **Fast quality gates** job uses `ubuntu-24.04`, Python **3.12**, and
+Temurin Java **17** with a 20-minute timeout. New runs cancel obsolete runs for
+the same workflow/ref. The token has only `contents: read`; checkout does not
+retain credentials. No repository secrets are required.
+
+The workflow installs only `requirements.txt`, checks dependency consistency,
+and uses `actions/setup-python` pip caching keyed by that file. It does not cache
+data, databases, credentials, dbt artifacts, or Spark checkpoints. Named steps
+fail on Python compilation errors, unittest failures (including Spark and BI),
+dbt validation errors, invalid Compose configuration, or whitespace errors.
+Once the first Actions run exists, repository maintainers can require
+**Fast quality gates** in branch protection/rulesets; adding the workflow alone
+does not enforce merge blocking. A status badge is deferred until that first run.
+
+### Fast CI versus full integration
+
+The existing unittest framework and discovery are retained. New `test_*.py`
+modules are discovered automatically; environment-dependent tests must have an
+explicit opt-in guard and a documented reason.
+
+| Tests/checks | Classification | What runs or is required |
+| --- | --- | --- |
+| `test_event_generator`, `test_kafka_producer`, `test_kafka_consumer` | FAST / CI-SAFE | Deterministic events, CLI subprocesses, and fake Kafka clients; no broker. |
+| `test_spark_streaming`, `test_silver_streaming`, `test_gold_build` | FAST / CI-SAFE | Real local Spark transformations, finite file streams, deduplication, and Parquet writes using temporary fixtures. No Kafka connector download or persistent lake data. |
+| `test_orchestration` | FAST / CI-SAFE | Fake Airflow DAG/operators plus real Spark dataset validation; no Airflow installation or scheduler. |
+| `WarehouseContractTests` | FAST / CI-SAFE | Schema, column, and connection configuration contracts; no database. |
+| `test_dbt_project`, `test_bi_config`, `test_ci_config` | FAST / CI-SAFE | Static project/lineage, BI SQL/configuration, mocked provisioning, and CI policy checks; no Metabase or browser. |
+| Windows helper and cleanup-retry unit tests | FAST / CI-SAFE | Mocked OS/retry behavior runs on both systems. Linux helpers leave environment and builder untouched; no Windows native binaries are loaded. |
+| `WarehouseIntegrationTests` (two tests) | FULL INTEGRATION | Requires a populated local PostgreSQL warehouse and matching Gold Parquet. Tests refresh the configured warehouse and verify reruns/rollback. |
+| Live Kafka ingestion, complete Airflow DAG, dbt execution, Metabase API/dashboard/browser, native Windows Hadoop loading | FULL INTEGRATION | Manual local acceptance checks require running services, populated data, or Windows native files. These are not additional hidden unittest skips. |
+
+CI explicitly sets `RUN_SPARK_TESTS=1` and
+`RUN_WAREHOUSE_INTEGRATION_TESTS=0`. Only the two warehouse integration methods
+are skipped. Spark tests remain enabled by default locally. The existing
+`RUN_SPARK_TESTS=0` option is useful for a quick non-Spark development check, but
+is not equivalent to CI. Windows setup remains documented below.
+
+### dbt and Docker validation
+
+CI runs a fresh `dbt parse --no-partial-parse`, then
+`dbt compile --no-introspect --no-populate-cache` against the committed project
+and profile. The current models/macros can render all four marts and all 36 data
+tests without a database. The flags disable introspection and relation-cache
+population ([dbt compile documentation](https://docs.getdbt.com/reference/commands/compile)).
+The required profile receives dummy values with `127.0.0.1:1` as an unused
+endpoint; `ci-unused` is a placeholder, not a database credential. Anonymous dbt
+usage reporting is disabled. Runtime artifacts remain Git-ignored.
+
+This validates YAML, Jinja, references, and SQL rendering. It does **not** ask
+PostgreSQL to validate SQL syntax/types/columns, execute models, or run data tests.
+Database-dependent macros added later will need an explicit CI strategy; do not
+silently bypass compilation failures. An ephemeral PostgreSQL service was
+considered, but meaningful execution coverage needs maintained source fixtures;
+the existing warehouse tests depend on a populated local snapshot. No database
+service or manual integration workflow is added in this phase. Full integration
+remains local until an isolated, deterministic fixture lifecycle is available.
+
+`docker compose config --quiet` validates interpolation and Compose structure
+using the repository's local defaults. CI does not start containers. Image
+availability, image builds, service health, and platform interoperability remain
+local checks. The pinned Ubuntu release still receives runner-image updates;
+requirements pin direct dependencies, not the complete transitive dependency graph.
+
+### Reproduce CI locally
+
+Use Python 3.12 and Java 17, with the virtual environment activated. On Windows,
+first satisfy the Hadoop prerequisites in **Local Spark on Windows** below.
+Run each command from the repository root and stop if it returns nonzero:
+
+```text
+python -m pip install -r requirements.txt
+python -m pip check
+python -m compileall -q src tests airflow/dags bi
+```
+
+In PowerShell, set the CI test switches and run discovery:
+
+```powershell
+$env:RUN_SPARK_TESTS = '1'
+$env:RUN_WAREHOUSE_INTEGRATION_TESTS = '0'
+$env:SPARK_LOCAL_IP = '127.0.0.1'
+python -m unittest discover -s tests -v
+```
+
+For offline dbt validation, use a separate PowerShell session so these dummy
+values do not replace the connection settings used for full integration:
+
+```powershell
+$env:WAREHOUSE_HOST = '127.0.0.1'
+$env:WAREHOUSE_PORT = '1'
+$env:WAREHOUSE_DB = 'pulse_ci'
+$env:WAREHOUSE_USER = 'ci'
+$env:WAREHOUSE_PASSWORD = 'ci-unused'
+$env:DBT_SCHEMA = 'marts'
+$env:DBT_SEND_ANONYMOUS_USAGE_STATS = 'false'
+dbt parse --project-dir dbt --profiles-dir dbt --no-partial-parse
+dbt compile --project-dir dbt --profiles-dir dbt --no-introspect --no-populate-cache
+```
+
+On Ubuntu/macOS, use `export NAME=value` for the same variables, plus
+`export TZ=UTC`, and run the same Python/dbt commands. Linux needs no
+`winutils.exe`, `hadoop.dll`, or `HADOOP_HOME` override.
+
+```text
+docker compose config --quiet
+git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --check
+git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --cached --check
+git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --check origin/main...HEAD
+```
+
+The first two Git checks cover unstaged/staged changes; the last covers the
+branch's committed changes. Untracked files enter Git's checks once staged.
+CI checks the PR base against the tested merge commit, or the previous push SHA
+against `HEAD` (all pushed commits). An initial push or unavailable force-push
+base falls back to checking the entire tracked tree. Full checkout history
+makes the normal comparison bases available.
+
+`python -m unittest tests.test_ci_config -v` validates the parsed workflow's
+important contracts. If installed, `actionlint .github/workflows/ci.yml` adds
+GitHub Actions schema/expression and shell validation without starting services.
+Only a hosted run can verify GitHub checkout, tool setup, and cache behavior.
+
+### Full local regression
+
+Use the real local warehouse environment from `.env.example` (host-side tools
+do not automatically read `.env`). Start the existing stack, ensure Bronze,
+Silver, Gold, and the warehouse contain a consistent snapshot, then run:
+
+```powershell
+docker compose up -d
+docker compose ps
+$env:RUN_SPARK_TESTS = '1'
+$env:RUN_WAREHOUSE_INTEGRATION_TESTS = '1'
+python -m unittest discover -s tests -v
+python -m src.warehouse.load_gold validate
+dbt debug --project-dir dbt --profiles-dir dbt
+dbt run --project-dir dbt --profiles-dir dbt
+dbt test --project-dir dbt --profiles-dir dbt
+```
+
+The integration tests refresh the local `analytics` tables, so use a local test
+warehouse with Gold data matching its current contents. For complete pipeline
+and dashboard acceptance, follow the Airflow instructions below and
+[`bi/VERIFICATION.md`](bi/VERIFICATION.md). CI does not certify live broker
+delivery, scheduler execution, dashboard rendering, or native Windows Hadoop.
+
 ## Local Spark on Windows
 
 Java 17 must be installed and `JAVA_HOME` must point to it. The Spark entry

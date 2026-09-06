@@ -1,4 +1,4 @@
-"""Fast unit tests for the PostgreSQL Gold serving contract."""
+"""CI-safe warehouse contracts and opt-in local snapshot integration tests."""
 
 from __future__ import annotations
 
@@ -57,9 +57,12 @@ class WarehouseContractTests(unittest.TestCase):
 
 @unittest.skipUnless(
     os.environ.get("RUN_WAREHOUSE_INTEGRATION_TESTS") == "1",
-    "Warehouse integration tests disabled",
+    "Full integration: requires populated PostgreSQL and matching local Gold "
+    "Parquet; set RUN_WAREHOUSE_INTEGRATION_TESTS=1",
 )
 class WarehouseIntegrationTests(unittest.TestCase):
+    """Refresh the configured warehouse; run only against a local test snapshot."""
+
     def test_full_refresh_is_rerunnable_without_duplicates(self) -> None:
         before = validate_warehouse()
         self.assertEqual(load_gold_to_warehouse(), before)

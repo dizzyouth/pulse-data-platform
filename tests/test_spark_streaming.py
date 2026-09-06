@@ -32,7 +32,10 @@ from src.streaming.spark_streaming import (
     classify_marketplace_events,
     load_bronze_paths,
 )
-from src.streaming.windows_spark import configure_windows_spark_environment
+from src.streaming.windows_spark import (
+    configure_windows_spark_builder,
+    configure_windows_spark_environment,
+)
 
 KAFKA_TEST_SCHEMA = StructType(
     [
@@ -61,15 +64,16 @@ VALID_EVENT = {
 
 class WindowsSparkEnvironmentTests(unittest.TestCase):
     def test_configures_project_local_process_environment(self) -> None:
-        with TemporaryDirectory() as directory, patch(
-            "src.streaming.windows_spark.os.name", "nt"
-        ):
+        with TemporaryDirectory() as directory:
             root = Path(directory)
             environment: dict[str, str] = {}
 
-            configure_windows_spark_environment(
-                project_root=root, environ=environment
-            )
+            # Construct the host-native Path before simulating Windows: os is
+            # shared with pathlib, which otherwise selects WindowsPath on Linux.
+            with patch("src.streaming.windows_spark.os.name", "nt"):
+                configure_windows_spark_environment(
+                    project_root=root, environ=environment
+                )
 
             self.assertEqual(environment["HADOOP_HOME"], str(root / "tmp" / "hadoop"))
             self.assertEqual(environment["TEMP"], str(root / "tmp" / "spark"))
@@ -81,9 +85,8 @@ class WindowsSparkEnvironmentTests(unittest.TestCase):
             self.assertTrue((root / "tmp" / "spark").is_dir())
 
     def test_preserves_explicit_environment_overrides(self) -> None:
-        with TemporaryDirectory() as directory, patch(
-            "src.streaming.windows_spark.os.name", "nt"
-        ):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
             environment = {
                 "HADOOP_HOME": "custom-hadoop",
                 "TEMP": "custom-temp",
@@ -91,9 +94,10 @@ class WindowsSparkEnvironmentTests(unittest.TestCase):
                 "PATH": "custom-path",
             }
 
-            configure_windows_spark_environment(
-                project_root=Path(directory), environ=environment
-            )
+            with patch("src.streaming.windows_spark.os.name", "nt"):
+                configure_windows_spark_environment(
+                    project_root=root, environ=environment
+                )
 
             self.assertEqual(environment["HADOOP_HOME"], "custom-hadoop")
             self.assertEqual(environment["TEMP"], "custom-temp")
@@ -101,9 +105,26 @@ class WindowsSparkEnvironmentTests(unittest.TestCase):
             self.assertEqual(
                 environment["PATH"],
                 os.pathsep.join(
-                    (str(Path(directory) / "tmp" / "hadoop" / "bin"), "custom-path")
+                    (str(root / "tmp" / "hadoop" / "bin"), "custom-path")
                 ),
             )
+
+    def test_non_windows_helpers_leave_environment_and_builder_untouched(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = {"PATH": "original-path", "TEMP": "original-temp"}
+            original = environment.copy()
+            builder = object()
+
+            with patch("src.streaming.windows_spark.os.name", "posix"):
+                configure_windows_spark_environment(
+                    project_root=root, environ=environment
+                )
+                configured = configure_windows_spark_builder(builder, project_root=root)
+
+            self.assertEqual(environment, original)
+            self.assertIs(configured, builder)
+            self.assertEqual(list(root.iterdir()), [])
 
 
 @unittest.skipUnless(os.environ.get("RUN_SPARK_TESTS", "1") == "1", "Spark tests disabled")

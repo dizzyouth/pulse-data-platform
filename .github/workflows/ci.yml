@@ -1,0 +1,88 @@
+name: CI
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Fast quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUN_SPARK_TESTS: "1"
+      RUN_WAREHOUSE_INTEGRATION_TESTS: "0"
+      SPARK_LOCAL_IP: 127.0.0.1
+      TZ: UTC
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip check
+
+      - name: Validate Python
+        run: python -m compileall -q src tests airflow/dags bi
+
+      - name: Run tests (including Spark, dbt contracts, and BI configuration)
+        run: python -m unittest discover -s tests -v
+
+      - name: Validate dbt
+        env:
+          # Unused profile values, not credentials for a running database.
+          WAREHOUSE_HOST: 127.0.0.1
+          WAREHOUSE_PORT: "1"
+          WAREHOUSE_DB: pulse_ci
+          WAREHOUSE_USER: ci
+          WAREHOUSE_PASSWORD: ci-unused
+          DBT_SCHEMA: marts
+        run: |
+          dbt parse --project-dir dbt --profiles-dir dbt --no-partial-parse
+          dbt compile --project-dir dbt --profiles-dir dbt --no-introspect --no-populate-cache
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Validate whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE_SHA"
+          elif [[ -n "$PUSH_BEFORE_SHA" && ! "$PUSH_BEFORE_SHA" =~ ^0+$ ]] && git cat-file -e "$PUSH_BEFORE_SHA^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE_SHA"
+          else
+            # First push or an unavailable force-push base: check the whole tree.
+            base="$(git hash-object -t tree /dev/null)"
+          fi
+          git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --check "$base" HEAD
