@@ -31,6 +31,7 @@ explicit opt-in guard and a documented reason.
 | `test_orchestration` | FAST / CI-SAFE | Fake Airflow DAG/operators plus real Spark dataset validation; no Airflow installation or scheduler. |
 | `WarehouseContractTests` | FAST / CI-SAFE | Schema, column, and connection configuration contracts; no database. |
 | `test_dbt_project`, `test_bi_config`, `test_ci_config` | FAST / CI-SAFE | Static project/lineage, BI SQL/configuration, mocked provisioning, and CI policy checks; no Metabase or browser. |
+| `test_quality` | FAST / CI-SAFE | Typed results, reusable Spark checks, temporary Parquet CLI fixtures, and bounded snapshot reconciliation; no running services. |
 | Windows helper and cleanup-retry unit tests | FAST / CI-SAFE | Mocked OS/retry behavior runs on both systems. Linux helpers leave environment and builder untouched; no Windows native binaries are loaded. |
 | `WarehouseIntegrationTests` (two tests) | FULL INTEGRATION | Requires a populated local PostgreSQL warehouse and matching Gold Parquet. Tests refresh the configured warehouse and verify reruns/rollback. |
 | Live Kafka ingestion, complete Airflow DAG, dbt execution, Metabase API/dashboard/browser, native Windows Hadoop loading | FULL INTEGRATION | Manual local acceptance checks require running services, populated data, or Windows native files. These are not additional hidden unittest skips. |
@@ -149,6 +150,175 @@ warehouse with Gold data matching its current contents. For complete pipeline
 and dashboard acceptance, follow the Airflow instructions below and
 [`bi/VERIFICATION.md`](bi/VERIFICATION.md). CI does not certify live broker
 delivery, scheduler execution, dashboard rendering, or native Windows Hadoop.
+
+## Data Quality Framework (Phase 5.1)
+
+`src/quality/` provides read-only assessment of Spark **batch DataFrames**. It
+returns typed results in memory, with optional JSON output. It does not modify
+datasets, write monitoring tables, or change the Airflow DAG. Existing Python
+3.12 / Java 17 dependencies and unittest discovery are sufficient; no new
+packages, services, or CI workflows are required.
+
+The existing validation remains authoritative at each write boundary: Bronze
+checks parsing/required fields and Kafka identity; Silver normalizes, rejects,
+and deduplicates events; Gold validates aggregate sanity; PostgreSQL enforces
+its serving schema and transactional checks; dbt tests its sources and marts.
+The quality framework adds reusable measurements, consistent result reporting,
+configurable thresholds, and snapshot reconciliation. It does not replace the
+transformation rules or add another automatic blocking stage.
+
+### API and result contract
+
+- `models.py`: immutable rule/context/result dataclasses, status and severity
+  enums, summary, blocking decision, and JSON serialization.
+- `checks.py`: rule validation, Spark aggregate expressions, and metric evaluation.
+- `runner.py`: `run_quality_checks(dataset, rules, context)` and the local CLI.
+- `datasets.py`: Silver and Gold/analytics policies. Allowed events reuse
+  `SUPPORTED_EVENT_TYPES`; Gold bounds/nullability reuse warehouse `TABLE_SPECS`.
+- `reconciliation.py`: explicit bounded-snapshot count checks between layers.
+
+Each `QualityResult` contains `check_name`, `dataset_name`, `layer`, `status`,
+`severity`, `metric_name`, `observed_value`, `expected_value`, `checked_at_utc`,
+and typed `CheckDetails`. Details can include evaluated/violating row counts,
+duplicate count/rate, latest UTC timestamp, and reference/deduplication counts.
+No sample customer records are collected into the report.
+
+```python
+from src.quality.datasets import silver_rules
+from src.quality.models import QualityContext, report_json, should_block, summarize
+from src.quality.runner import run_quality_checks
+
+context = QualityContext(dataset_name="silver_valid", layer="silver")
+results = run_quality_checks(silver_dataframe, silver_rules(), context)
+summary = summarize(results)
+print(report_json(results))
+blocking = should_block(results)  # Caller decides whether to stop downstream work.
+```
+
+`QualityContext` captures one timezone-aware UTC check time per run. Supply a
+fixed `checked_at_utc` for deterministic tests and `reference_count` for a
+comparable previous snapshot. Rules are configured as Python dataclasses; there
+is no separate YAML rules engine.
+
+### Status, severity, and edge cases
+
+A satisfied rule returns **PASS**. A violated **CRITICAL** rule returns **FAIL**;
+a violated **WARNING** or **INFO** rule returns **WARN**. INFO identifies an
+observation that never blocks, even when its expectation is missed. An
+unavailable ratio (empty sample) or absent volume baseline returns WARN at any
+severity, with an explanatory detail rather than a fabricated passing metric.
+
+`summarize` returns total checks, passed, warnings, failed, critical failures,
+and overall status. Overall **FAIL** means at least one critical FAIL; otherwise
+any WARN or noncritical FAIL makes the run **WARN**; otherwise it is **PASS**.
+`should_block` is true only for critical FAIL results. An empty rule collection
+summarizes as PASS with zero checks; it does not certify any dataset coverage.
+
+Missing columns or incompatible numeric/timestamp/string types produce a result
+for the affected check, using its configured severity. Bad rule configuration,
+ambiguous duplicate column names, streaming inputs, and Spark execution errors
+raise exceptions; operational failures are not disguised as data-quality passes.
+
+| Check | Measurement and semantics |
+| --- | --- |
+| `RowCount` | Exact count, compared with inclusive `min_rows`. Empty data is zero. |
+| `NullRatio` | Null rows / all rows for a column. `0.05` means 5%; empty samples warn. Blank strings require a separate pattern rule. |
+| `Uniqueness` | Excess rows beyond one per key group / all rows. Reports both count and rate; composite and null-containing keys are grouped. Completeness is separate. Empty samples warn. |
+| `AllowedValues` | Count outside the configured scalar values, with explicit nullable behavior. |
+| `NumericBounds` | Count outside inclusive bounds (optionally exclusive minimum). Null handling is configurable; NaN and infinities are invalid. |
+| `Pattern` | Count failing a Spark regular expression. Anchor format expressions when a whole-field match is required. |
+| `Freshness` | Age in seconds of the latest non-null timestamp, relative to context UTC time. Empty/all-null timestamps violate the rule. Future timestamps beyond configurable tolerance also violate it. Pair with completeness to detect partial nulls. |
+| `VolumeChange` | `abs(current - reference) / reference`, with an inclusive deviation threshold. Missing reference warns; zero-to-zero is 0; growth from zero violates the rule with an undefined (JSON null) ratio. No history is inferred or stored. |
+
+Patterns are prevalidated with Python's regular-expression parser and executed
+by Spark; use syntax supported by both engines. The supplied Pulse patterns
+use simple ASCII character classes and anchors.
+
+Allowed-value, bounds, and pattern checks also warn on empty samples. Add an
+explicit row-count minimum when emptiness should block. All optional null rules
+apply to nonempty datasets; intentional nulls do not become invalid values.
+
+### Pulse dataset policies and reconciliation
+
+Silver checks event-ID uniqueness; non-null event/customer/session identifiers,
+timestamps and dates; nonblank identifiers; allowed event types; quantity **> 0
+when present**; nonnegative optional price; and optional uppercase two-letter
+country / three-letter currency formats. Zero quantity is rejected because that
+is the existing Silver contract. Empty Silver is a warning by default; callers
+can choose a critical row-count rule. Freshness and volume limits are opt-in so
+historical local demonstration data does not acquire an invented freshness SLA.
+
+Gold policies cover all four tables: unique business grains, required columns,
+nonnegative counts/units/revenue, and nullable funnel rates in `[0, 1]`. Null
+seller IDs and zero-denominator rates remain valid. Gold country/currency can
+be null under the upstream contract, so their completeness checks are
+**warehouse-readiness warnings**. `gold_rules(name, layer="analytics")` applies
+the existing stricter warehouse nullability and nonempty-table requirements to
+a caller-supplied Spark DataFrame. It does not open a PostgreSQL connection.
+
+`reconcile_bronze_silver(..., bounded_snapshot=True)` reuses the existing Silver
+classifier with deduplication disabled. If `Q` rows qualify before deduplication,
+`U` distinct valid event IDs remain, and `R` rows are rejected, expected Silver
+valid is `U` and rejected is `R`. Thus processed Bronze valid input reconciles
+as `Silver valid + Silver rejected + (Q - U)`. Rejected rows are not deduplicated.
+Bronze's separate invalid-message dataset is outside this reconciliation.
+
+`reconcile_silver_gold(..., bounded_snapshot=True)` requires nonempty customer
+and funnel outputs when Silver has rows, daily sales when it has payments, and
+product metrics when it has non-null product IDs. No-payment/no-product input
+can legitimately yield empty corresponding tables. Aggregate row counts are
+not compared for equality with event counts; numeric/grain policies are separate.
+
+Both helpers return normal quality results with critical count failures. They
+require matching, stable, finite snapshots and explicit opt-in. Independent
+streaming checkpoints, watermark eviction, concurrent writers, and differing
+snapshot windows invalidate these count comparisons. Counts do not prove row
+identity or content equality: equal-count substitutions require deeper checks
+in a future phase. Global Silver uniqueness is a snapshot expectation, not an
+unbounded exactly-once promise beyond the streaming watermark.
+
+### Local execution and tests
+
+From the repository root with the virtual environment activated (and the Windows
+Spark prerequisites below satisfied):
+
+```text
+python -m src.quality.runner silver_valid
+python -m src.quality.runner daily_sales
+python -m src.quality.runner silver_valid --max-age-hours 24 --reference-count 1000 --max-volume-change 0.2
+python -m src.quality.runner silver_valid --path data/silver/marketplace_events/valid --block-on-critical
+python -m unittest tests.test_quality -v
+python -m unittest discover -s tests -v
+```
+
+The CLI reuses configured Silver/Gold paths, the portable Parquet reader, and
+Windows Spark setup. Its JSON report is written to stdout. Spark diagnostics
+may appear on stderr, and the existing Windows Spark launcher can append native
+process-shutdown messages to stdout after the JSON block. For a JSON-only
+artifact, write the string returned by `report_json(results)` to a file from
+the API; the engine's JSON serialization does not include runtime messages.
+The CLI is **report-only by default**, returning 0 even for
+data-quality failures; `--block-on-critical` returns 1 for critical failures.
+Invalid configuration or unreadable input still exits nonzero. A missing
+Parquet directory is an input error, not a fabricated empty DataFrame. Freshness
+CLI options apply only to Silver event timestamps, not Gold calendar dates.
+
+The framework batches ordinary metrics into one Spark aggregate query and uses
+additional grouped aggregates for exact uniqueness. Only scalar aggregate rows
+return to Python; no large collect or pandas conversion is used. Callers own
+snapshot consistency and may cache expensive DataFrames around a run, then
+unpersist them. The current local reader's file enumeration and exact uniqueness
+shuffles remain development-scale limitations. Timestamp freshness requires a
+Spark timestamp with instant semantics; timestamp-without-time-zone and strings
+must be explicitly normalized by the caller.
+
+New deterministic Spark tests use temporary/in-memory fixtures and are included
+automatically by existing CI discovery with `RUN_SPARK_TESTS=1`. No service-based
+test has been added. Phase 5.2 will integrate orchestration/observability more
+deeply; Phase 5.3 will persist results separately from this engine. Monitoring
+tables, dashboards, external alerts, catalogs/lineage, third-party quality
+platforms, statistical baselines, and ML anomaly detection are intentionally
+deferred.
 
 ## Local Spark on Windows
 
