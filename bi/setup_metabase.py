@@ -247,6 +247,14 @@ def main() -> int:
     database_id = _ensure_warehouse(session_id)
     _verify_marts(session_id, database_id)
     _ensure_dashboard(session_id, database_id)
+    if __package__:
+        from .monitoring_dashboard import ensure_dashboard
+    else:
+        from monitoring_dashboard import ensure_dashboard
+    dashboard_id = ensure_dashboard(
+        lambda method, path, payload=None: _request(method, path, payload, session_id),
+        _unique, database_id)
+    print(f"Platform health dashboard ready: {METABASE_URL}/dashboard/{dashboard_id}")
     return 0
 
 

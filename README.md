@@ -542,8 +542,8 @@ every write; concurrent rewrites use the same last-committer-wins behavior.
 `pipeline_runs` is deliberately deferred: Airflow remains authoritative for DAG
 start/end/state, and quality rows already retain correlation IDs and timing.
 Monitoring history grows over time; automatic retention is deferred to operational
-hardening. Phase 5.4 and later can build monitoring dashboards and alerting on this
-history. This phase adds no Metabase dashboards, external observability platform,
+hardening. Phase 5.4 adds monitoring dashboards on this history; alerting remains
+deferred. Phase 5.3 itself adds no Metabase dashboards, external observability platform,
 notifications, statistical baselines, ML anomaly detection, or lineage system.
 
 ## Local Spark on Windows
@@ -822,6 +822,11 @@ docker compose up -d
 docker compose ps
 ```
 
+Before provisioning dashboards, initialize the monitoring tables and views using
+the commands in [Phase 5.4](#phase-54-monitoring-dashboard-and-operational-health).
+On a fresh stack, populate the dbt marts and complete that initialization, then
+rerun `docker compose run --rm metabase-setup` if the initial setup job ran early.
+
 The one-shot `metabase-setup` service uses the pinned Metabase API to create the
 first local admin and register the analytics connection idempotently. Its local
 defaults are `admin@pulse.local` / `PulseLocal!4xN7qB2v`; override
@@ -898,6 +903,112 @@ country, and currency filters do not apply to them. Authentication
 and database traffic are unencrypted local-development connections, Metabase
 uses the existing broad local warehouse user rather than a dedicated read-only
 role, and no currency conversion or country-revenue mart exists yet.
+
+## Phase 5.4: Monitoring dashboard and operational health
+
+**Pulse Platform Health** exposes persisted quality history in Metabase alongside
+the existing **Pulse Marketplace Overview** dashboard. It measures recorded
+quality assessments, not service uptime or whether a currently running pipeline
+has finished. Airflow quality gates, their blocking behavior, and business dbt
+marts are unchanged.
+
+The read-only PostgreSQL presentation schema `monitoring_views` consumes
+`monitoring.quality_runs` and `monitoring.quality_results`. Direct views keep
+monitoring available when a CRITICAL gate prevents downstream dbt from running.
+View initialization is explicit and transactional, uses existing `WAREHOUSE_*`
+configuration, and does not write quality history. Metabase setup only reads
+these views and reconciles its own saved questions/dashboard metadata.
+
+| View | Grain and meaning |
+| --- | --- |
+| `quality_history` | One persisted dataset execution/attempt, with UTC completion date and duration in seconds |
+| `latest_quality_status` | Latest completed execution per dataset/layer, across all execution sources and attempts |
+| `check_history` | One check result, preserving JSONB observations/expectations and execution context |
+| `check_failure_summary` | All-time counts per dataset/layer/check; windowed questions aggregate `check_history` before grouping |
+| `recent_critical_failures` | Only check status FAIL **and** severity CRITICAL; callers choose window, ordering, and limit |
+| `current_health` | One row for each required layer: `silver`, `gold`, and `analytics` (Warehouse) |
+
+Latest means greatest `completed_at_utc`, with UUID as a deterministic tie-breaker;
+it does not mean most recently inserted, greatest logical date, or worst historical
+status. Separate retry attempts count as separate runs; repeated persistence of
+the same attempt does not. A run is one dataset assessment, not a whole DAG run.
+
+Current health expects `silver_valid` in Silver and the four registered Gold
+datasets (`daily_sales`, `customer_metrics`, `product_metrics`, `funnel_metrics`)
+in each of Gold and analytics. Missing coverage is **UNKNOWN**, never PASS.
+A known blocking failure takes precedence over UNKNOWN; otherwise complete
+coverage is WARN if any latest dataset run warns, and PASS if all pass. The
+oldest of the latest dataset timestamps exposes uneven coverage. The latest
+successful check timestamp means one passing check, not a fully successful run.
+Custom datasets remain visible in history/latest views but do not change this
+required-pipeline coverage summary. Keep the expected inventory aligned if
+pipeline policies change.
+
+Severity is a check's importance; status is its outcome. A PASS with WARNING or
+CRITICAL severity is successful. WARN outcomes include nonblocking violations
+and undefined metrics. Only FAIL + CRITICAL blocks processing. Historical check
+counts and run counts are labeled separately; a single run can contain many checks.
+
+Initialize and provision (safe to rerun, one setup process at a time):
+
+```powershell
+# Existing Phase 5.3 initialization also supports an empty warehouse history.
+python -m src.quality.persistence
+python -m src.warehouse.monitoring
+docker compose run --rm metabase-setup
+```
+
+Use the activated local virtual environment and existing warehouse environment
+variables. Alternatively, run both Python module commands with
+`docker compose exec -T airflow-scheduler python -m ...` to use the container's
+warehouse configuration. Business marts must already exist for Marketplace's
+existing setup verification. Missing monitoring views produce an actionable
+setup error. No database migrations, new services, dependencies, or secrets are
+required. PostgreSQL rejects DML through these presentation views; the existing
+broad local warehouse role still has access to underlying tables.
+
+Open the setup command's dashboard URL, or **Pulse Monitoring → Pulse Platform
+Health** at [Metabase](http://localhost:3000). Eight cards show current health by
+layer, latest status by dataset, a daily run trend, a run-status distribution,
+recent warnings, recent failed CRITICAL checks, the top 20 warning/failing checks,
+and run/incident counts by layer. Incident tables show at most the latest 100
+matches. Empty incident cards mean no matching recorded incidents, not missing
+or broken queries.
+
+| Filter | Supported cards |
+| --- | --- |
+| Layer (`silver`, `gold`, `analytics`) | All cards |
+| Dataset (exact registered name) | All except the whole-layer coverage summary |
+| Run status (`PASS`, `WARN`, `FAIL`) | Historical run trend, status distribution, run/incident counts by layer |
+| Start / end date (inclusive UTC date range) | Historical run and incident cards; never current health or latest dataset status |
+
+Unset dates mean all history. Incident dates use check time; run cards use
+completion time. Fixed WARN/FAIL incident cards intentionally do not accept the
+Run status filter. Filters are parameterized, and only supported mappings are
+provisioned. Clear filters to return to all recorded history. Rerunning setup
+reuses managed object IDs, refreshes questions/mappings, and preserves unrelated
+cards and layouts. Existing persistent Metabase metadata storage is unchanged.
+
+For manual SQL, see [presentation queries](monitoring/presentation_queries.sql)
+and the [Phase 5.3 examples](monitoring/queries.sql). The prepared window example
+accepts configurable dates and an optional layer. Views contain no fixed period
+or retention rule. The Phase 5.3 dataset/layer/completion and partial failed-CRITICAL
+indexes were reviewed. The live latest-status plan uses a small sequential scan
+and sort; no additional indexes were needed for the local history. Presentation
+queries scan history, so larger deployments should revisit plans and filtering
+before adding indexes or materialization.
+
+Focused validation: set `RUN_MONITORING_INTEGRATION_TESTS=1`, then run
+`python -m unittest tests.test_monitoring_presentation -v`. PostgreSQL semantics
+tests create and remove their own disposable database; ordinary CI runs the
+configuration/provisioning contracts without requiring PostgreSQL.
+
+Limitations: no staleness SLA or live service probes, all execution sources are
+included, local BI uses the existing shared warehouse role, and history grows
+without automatic retention. Dashboard refinements, alerts, operational access hardening,
+retention, and freshness policies may evolve in Phase 5.5 or later. This phase
+adds no notifications, Grafana, Prometheus, external observability, ML anomaly
+detection, statistical baselines, OpenLineage, or production deployment.
 
 ## Airflow orchestration
 
