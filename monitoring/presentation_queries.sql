@@ -25,3 +25,15 @@ ORDER BY checked_at_utc DESC, quality_result_id DESC LIMIT 100;
 SELECT * FROM monitoring_views.quality_history
 WHERE dataset_name = 'daily_sales'
 ORDER BY completed_at_utc DESC, quality_run_id DESC;
+
+SELECT * FROM monitoring_views.recent_anomalies
+ORDER BY observed_at_utc DESC, anomaly_id DESC LIMIT 100;
+
+SELECT * FROM monitoring_views.recent_alert_events
+ORDER BY created_at_utc DESC, alert_event_id DESC LIMIT 100;
+
+SELECT * FROM monitoring_views.anomaly_summary_by_metric
+ORDER BY anomaly_count DESC, metric_name, dataset_name, layer;
+
+SELECT * FROM monitoring_views.alert_summary_by_severity
+ORDER BY severity, source_type, status;

@@ -107,7 +107,7 @@ class AirflowDagContractTests(unittest.TestCase):
         self.assertEqual(TASK_IDS, (
             "check_bronze_available", "build_silver", "quality_check_silver",
             "build_gold", "quality_check_gold", "load_gold_to_warehouse",
-            "quality_check_warehouse", "run_dbt", "test_dbt",
+            "quality_check_warehouse", "anomaly_check", "run_dbt", "test_dbt",
         ))
         for target in ("silver", "gold", "warehouse"):
             task = module.dag.task_dict[f"quality_check_{target}"]
@@ -122,6 +122,11 @@ class AirflowDagContractTests(unittest.TestCase):
                 "QUALITY_MAP_INDEX": "{{ ti.map_index }}",
                 "QUALITY_LOGICAL_DATE": "{{ ts }}",
             })
+        anomaly = module.dag.task_dict["anomaly_check"]
+        self.assertEqual(anomaly.kwargs["bash_command"],
+                         "python -m src.quality.anomaly_runner --persist --log-format jsonl")
+        self.assertEqual(anomaly.kwargs["trigger_rule"], "all_success")
+        self.assertNotIn("--block-on-critical", anomaly.kwargs["bash_command"])
 
 
 @unittest.skipUnless(os.environ.get("RUN_SPARK_TESTS", "1") == "1", "Spark tests disabled")

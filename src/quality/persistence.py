@@ -89,6 +89,35 @@ def persist_quality_run(run: DatasetQualityRun, context: ExecutionContext):
                         observed_value, expected_value, checked_at_utc, details
                     ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """, rows)
+                # Results exist before alert rows. The shared transaction ensures
+                # neither becomes visible partially if alert creation fails.
+                alerts = []
+                for result_row, result in zip(rows, run.results):
+                    if result.status.value == "FAIL" and result.severity.value == "CRITICAL":
+                        event_id = context.logical_id("pulse-quality-alert-v1", run.dataset_name,
+                                                      run.layer, result.check_name)
+                        alerts.append((event_id, "QUALITY_FAILURE", result_row[0], run.dataset_name,
+                                       run.layer, "CRITICAL", "OPEN",
+                                       f"Critical quality failure: {result.check_name}",
+                                       result.details.message or f"{result.metric_name} failed its quality contract",
+                                       result.checked_at_utc, context.execution_source, context.execution_id,
+                                       context.dag_id, context.airflow_run_id, context.task_id,
+                                       context.attempt_number, context.map_index, context.logical_date_utc,
+                                       Jsonb({"check_name": result.check_name, "metric_name": result.metric_name,
+                                              "observed_value": json_value(result.observed_value),
+                                              "expected_value": json_value(result.expected_value)})))
+                alert_sql = """
+                    INSERT INTO monitoring.alert_events (
+                      alert_event_id,source_type,source_id,dataset_name,layer,severity,status,title,message,
+                      created_at_utc,execution_source,execution_id,dag_id,airflow_run_id,task_id,
+                      attempt_number,map_index,logical_date_utc,details)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (alert_event_id) DO UPDATE SET source_id=EXCLUDED.source_id,
+                      message=EXCLUDED.message, attempt_number=EXCLUDED.attempt_number,
+                      logical_date_utc=EXCLUDED.logical_date_utc, details=EXCLUDED.details
+                    """
+                for alert in alerts:
+                    cursor.execute(alert_sql, alert)
     except Exception:
         raise PersistenceError("Quality persistence failed; the dataset transaction was rolled back") from None
     return run_id

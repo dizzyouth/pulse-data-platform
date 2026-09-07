@@ -1010,6 +1010,110 @@ retention, and freshness policies may evolve in Phase 5.5 or later. This phase
 adds no notifications, Grafana, Prometheus, external observability, ML anomaly
 detection, statistical baselines, OpenLineage, or production deployment.
 
+## Phase 5.5: Explainable anomalies and internal alerts
+
+Phase 5.5 adds deterministic behavior monitoring without changing the fixed data
+contracts. The consolidated Airflow `anomaly_check` runs after
+`quality_check_warehouse` and before dbt. It reads PostgreSQL in read-only mode,
+evaluates quality history plus current analytics series, then atomically persists
+the evaluation and any internal alert events. It performs no Spark work and is
+nonblocking by default, including CRITICAL heuristic anomalies. Local operators
+may explicitly opt into blocking with `--block-on-critical`; the production DAG
+does not set that flag.
+
+The initial anomaly series are:
+
+- dataset row counts from the persisted `row_count` quality metric;
+- warning and failure check counts per logical dataset quality execution;
+- daily completed-order volume, aggregated across the daily-sales rows;
+- daily gross revenue separately for each currency (currencies are never summed);
+- each non-null funnel conversion rate separately for each country.
+
+Airflow retries are collapsed to the latest attempt before quality baselines are
+built. Business series use their event date. Schema, required columns, null and
+duplicate limits, allowed values, nonnegative measures, rate bounds, freshness,
+and reconciliation remain fixed Phase 5.1 rules because they are contracts rather
+than learned behavior.
+
+Each series requires seven prior observations by default, configurable locally
+with `--minimum-history`. Fewer observations produce `INSUFFICIENT_HISTORY` with
+INFO severity; that state is neither NORMAL nor ANOMALY. With enough history, the
+baseline is the median and dispersion is median absolute deviation (MAD). A
+nonzero MAD uses a modified z-score with inclusive WARNING/CRITICAL boundaries
+of 3.5/6.0. A flat nonzero baseline uses absolute percentage deviation; volume
+and revenue boundaries are 50%/90%, while funnel rates use 25%/50%. A flat zero
+baseline uses absolute change: warning/failure counts use 1/3 checks. Every row
+stores current and baseline values, signed deviation, percent deviation when
+defined, method, thresholds, history count, score/details, dimensions, timestamp,
+severity, and a plain-language explanation.
+
+`NORMAL`, `ANOMALY`, and `INSUFFICIENT_HISTORY` describe statistical outcome.
+`INFO`, `WARNING`, and `CRITICAL` describe importance. NORMAL and insufficient
+results are INFO. Anomalies cross the configured WARNING or CRITICAL magnitude;
+heuristic severity does not silently inherit Phase 5.2 blocking behavior.
+
+PostgreSQL adds two tables under the existing `monitoring` schema:
+
+| Table | Meaning and idempotency |
+| --- | --- |
+| `anomaly_results` | One metric series in one logical evaluation. Evaluation/result UUIDs exclude retry attempt; a retry transaction replaces the same evaluation and records the latest attempt. |
+| `alert_events` | Internal conditions requiring attention. Sources are anomaly WARNING/CRITICAL or fixed-rule FAIL+CRITICAL. Deterministic identity prevents duplicate events for the same DAG run/task/series or quality check across retries. |
+
+Alerts have an `OPEN` status; acknowledgement and resolution lifecycle operations
+are deferred. A retry replaces the anomaly evaluation and its derived OPEN events
+inside one transaction. There is no external delivery. For existing critical quality failures, the
+transaction writes the quality run and results first, then its CRITICAL alert.
+Only after commit does the runner log the summary and return failure, preserving:
+
+```text
+quality result persisted -> internal alert persisted -> task fails -> downstream blocked
+```
+
+An anomaly evaluation and all of its derived alerts are one transaction. A failed
+write leaves the previous complete retry state in place. Re-running the same local
+`--execution-id`, or retrying the same Airflow run/task, replaces that logical
+evaluation rather than appending duplicates. Distinct DAG runs remain distinct
+history.
+
+Initialize and run locally with existing `WAREHOUSE_*` configuration:
+
+```powershell
+python -m src.quality.persistence
+python -m src.warehouse.monitoring
+python -m src.quality.anomaly_runner --log-format json
+python -m src.quality.anomaly_runner --persist --execution-id local-anomaly-review
+```
+
+Persistence is opt-in locally; ordinary unit tests and report-only runs do not
+write PostgreSQL. The Airflow command always persists and emits structured JSONL
+events for each result and a NORMAL/ANOMALY/INSUFFICIENT_HISTORY summary.
+
+The read-only `monitoring_views` schema adds `recent_anomalies`,
+`recent_alert_events`, `anomaly_summary_by_metric`, and
+`alert_summary_by_severity`. “Recent” views deliberately contain no fixed period;
+queries choose their inclusive UTC window. Manual examples remain in
+`monitoring/presentation_queries.sql`.
+
+**Pulse Platform Health** retains its existing eight cards and filters, and adds
+four cards: recent anomalies, recent internal alerts, anomalies by metric, and
+alerts by severity. Layer, Dataset, Severity, Start date, and End date map to
+these cards. Run status remains mapped only to quality-run cards because alert
+status and anomaly status have different meanings. Incident tables show the
+latest 100 matching records and the metric chart shows the top 20 series.
+
+The current local history is intentionally sparse, so a real evaluation normally
+produces `INSUFFICIENT_HISTORY`. This is safe and expected. Deterministic isolated
+PostgreSQL fixtures cover stable baselines, spikes, drops, actual alert generation,
+and retry replacement without modifying live quality history.
+
+Current limitations: there is no seasonality, day-of-week adjustment, forecasting,
+multivariate model, freshness SLA, alert delivery, escalation, suppression window,
+automatic acknowledgement, remediation, or retention. Sparse and irregularly
+spaced observations are compared as ordered values. Phase 5.6 may add controlled
+delivery and lifecycle operations after operational policy is defined. Slack,
+email, PagerDuty, Grafana, Prometheus, external ML, neural networks, complex
+forecasting, OpenLineage, and production paging remain out of scope.
+
 ## Airflow orchestration
 
 Apache Airflow 2.11.2 runs entirely in Docker; no native Windows Airflow
@@ -1030,6 +1134,7 @@ check_bronze_available
   -> quality_check_gold
   -> load_gold_to_warehouse
   -> quality_check_warehouse
+  -> anomaly_check
   -> run_dbt
   -> test_dbt
 ```

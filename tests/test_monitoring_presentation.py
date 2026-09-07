@@ -42,7 +42,7 @@ class DashboardContractsTests(unittest.TestCase):
             self.assertEqual(health.call_args.args[2], 123)
 
     def test_queries_are_select_only_and_filters_match_semantics(self):
-        self.assertEqual(len(dashboard.SPECS), 8)
+        self.assertEqual(len(dashboard.SPECS), 12)
         for filename, _, _, _ in dashboard.SPECS:
             query = dashboard.question_query(filename, 123)["native"]
             self.assertTrue(query["query"].startswith("SELECT "))
@@ -57,8 +57,10 @@ class DashboardContractsTests(unittest.TestCase):
                 self.assertEqual(tags, {"layer", "dataset"})
             elif filename in ("recent_warnings", "recent_critical_failures", "failing_checks"):
                 self.assertEqual(tags, {"layer", "dataset", "start_date", "end_date"})
+            elif filename in ("recent_anomalies", "recent_alert_events", "anomalies_by_metric", "alerts_by_severity"):
+                self.assertEqual(tags, {"layer", "dataset", "severity", "start_date", "end_date"})
             else:
-                self.assertEqual(tags, set(dashboard.FILTERS))
+                self.assertEqual(tags, set(dashboard.FILTERS) - {"severity"})
 
     def test_provisioning_is_idempotent_preserves_unrelated_cards_and_maps_valid_tags(self):
         objects = {}
@@ -90,7 +92,7 @@ class DashboardContractsTests(unittest.TestCase):
         self.assertEqual(dashboard.ensure_dashboard(api, _unique, 123), identity)
         self.assertEqual(set(objects), original_ids)
         self.assertEqual(objects[identity]["name"], "Pulse Platform Health")
-        self.assertEqual(len(objects[identity]["dashcards"]), 9)
+        self.assertEqual(len(objects[identity]["dashcards"]), 13)
         self.assertIn("custom", {p["id"] for p in objects[identity]["parameters"]})
         for card in objects[identity]["dashcards"][:-1]:
             tags = objects[card["card_id"]]["dataset_query"]["native"]["template-tags"]
@@ -212,6 +214,6 @@ class PresentationPostgresTests(unittest.TestCase):
                 self.fetch(unfiltered)
                 filtered = query.replace("[[", "").replace("]]", "")
                 values = {"layer": "silver", "dataset": "silver_valid", "status": "PASS",
-                          "start_date": "2026-01-01", "end_date": "2026-01-01"}
+                          "severity": "WARNING", "start_date": "2026-01-01", "end_date": "2026-01-01"}
                 filtered = re.sub(r"\{\{(\w+)\}\}", lambda m: f"%({m[1]})s", filtered)
                 self.fetch(filtered, values)

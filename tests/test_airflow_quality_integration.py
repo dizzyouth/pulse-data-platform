@@ -68,7 +68,13 @@ class AirflowQualityExecutionTests(unittest.TestCase):
                                 count = connection.execute(
                                     'SELECT count(*) FROM monitoring.quality_runs WHERE dag_id=%s AND task_id=%s',
                                     (os.environ['AIRFLOW_CTX_DAG_ID'], os.environ['AIRFLOW_CTX_TASK_ID'])).fetchone()[0]
+                                alerts = connection.execute(
+                                    "SELECT count(*) FROM monitoring.alert_events WHERE source_type='QUALITY_FAILURE' "
+                                    "AND dag_id=%s AND task_id=%s",
+                                    (os.environ['AIRFLOW_CTX_DAG_ID'], os.environ['AIRFLOW_CTX_TASK_ID'])).fetchone()[0]
                             assert count > 0, 'Summary must follow committed persistence'
+                            assert (alerts > 0) == ({severity!r} == 'CRITICAL'), \
+                                'Quality alert must be committed before summary and blocking'
                         return log_summary(results, **kwargs)
                     stack.enter_context(patch('src.quality.observability.log_summary', verified_summary))
                 raise SystemExit(main({args!r}))

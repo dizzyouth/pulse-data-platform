@@ -38,6 +38,12 @@ class ExecutionContext:
                self.airflow_run_id, self.task_id, self.map_index, self.attempt_number, dataset_name, layer]
         return uuid5(NAMESPACE_URL, json.dumps(key, separators=(",", ":")))
 
+    def logical_id(self, namespace: str, *parts) -> UUID:
+        """Stable across retries for idempotent derived events."""
+        key = [namespace, self.execution_source, self.execution_id, self.dag_id,
+               self.airflow_run_id, self.task_id, self.map_index, *parts]
+        return uuid5(NAMESPACE_URL, json.dumps(key, separators=(",", ":"), sort_keys=True))
+
 
 def execution_context(*, execution_id: str | None = None, attempt_number: int | None = None,
                       environ: Mapping[str, str] | None = None) -> ExecutionContext:

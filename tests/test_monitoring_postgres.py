@@ -51,7 +51,8 @@ class MonitoringPostgresTests(unittest.TestCase):
         ensure_monitoring_schema()
         ensure_monitoring_schema()
         tables = self.fetch("SELECT tablename FROM pg_tables WHERE schemaname='monitoring'")
-        self.assertEqual({row[0] for row in tables}, {"quality_runs", "quality_results"})
+        self.assertEqual({row[0] for row in tables},
+                         {"quality_runs", "quality_results", "anomaly_results", "alert_events"})
         indexes = self.fetch("SELECT indexname FROM pg_indexes WHERE schemaname='monitoring'")
         self.assertTrue({"quality_runs_completed_idx", "quality_runs_dataset_idx", "quality_runs_layer_idx",
                          "quality_runs_status_idx", "quality_results_critical_idx"} <= {row[0] for row in indexes})

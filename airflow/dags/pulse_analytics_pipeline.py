@@ -84,6 +84,15 @@ with DAG(
         env=QUALITY_EXECUTION_ENV,
         append_env=True,
     )
+    anomaly_check = BashOperator(
+        task_id="anomaly_check",
+        bash_command="python -m src.quality.anomaly_runner --persist --log-format jsonl",
+        cwd=PROJECT_ROOT,
+        trigger_rule="all_success",
+        do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV,
+        append_env=True,
+    )
     run_dbt = BashOperator(
         task_id="run_dbt",
         bash_command="dbt run --project-dir /opt/pulse/dbt",
@@ -103,6 +112,7 @@ with DAG(
         >> quality_check_gold
         >> load_gold_to_warehouse
         >> quality_check_warehouse
+        >> anomaly_check
         >> run_dbt
         >> test_dbt
     )

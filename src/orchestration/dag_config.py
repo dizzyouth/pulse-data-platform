@@ -14,6 +14,7 @@ TASK_IDS = (
     "quality_check_gold",
     "load_gold_to_warehouse",
     "quality_check_warehouse",
+    "anomaly_check",
     "run_dbt",
     "test_dbt",
 )

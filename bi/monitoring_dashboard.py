@@ -20,9 +20,15 @@ SPECS = (
     ("recent_critical_failures", "Recent failed CRITICAL checks (latest 100)", "table", {}),
     ("failing_checks", "Most frequent warning / failing checks (top 20)", "table", {}),
     ("runs_by_layer", "Quality runs and incident counts by layer", "table", {}),
+    ("recent_anomalies", "Recent anomalies (latest 100)", "table", {}),
+    ("recent_alert_events", "Recent internal alert events (latest 100)", "table", {}),
+    ("anomalies_by_metric", "Anomalies by metric (top 20)", "bar",
+     {"graph.dimensions": ["metric_name"], "graph.metrics": ["anomaly_count"]}),
+    ("alerts_by_severity", "Internal alerts by severity", "bar",
+     {"graph.dimensions": ["severity"], "graph.metrics": ["alert_count"]}),
 )
 FILTERS = {"layer": "Layer", "dataset": "Dataset", "status": "Run status",
-           "start_date": "Start date (UTC)", "end_date": "End date (UTC)"}
+           "severity": "Severity", "start_date": "Start date (UTC)", "end_date": "End date (UTC)"}
 
 
 def question_query(filename, database_id):

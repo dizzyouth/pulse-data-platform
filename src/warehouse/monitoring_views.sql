@@ -74,3 +74,34 @@ FROM expected e
 LEFT JOIN monitoring_views.latest_quality_status l USING (dataset_name, layer)
 LEFT JOIN successful s ON s.layer = e.layer
 GROUP BY e.layer, s.latest_successful_check_at_utc;
+
+-- No embedded time window: "recent" is chosen by the caller.
+CREATE OR REPLACE VIEW monitoring_views.recent_anomalies AS
+SELECT anomaly_id,evaluation_id,metric_name,dataset_name,layer,dimensions,current_value,
+       baseline_value,deviation_value,deviation_percent,threshold,method,status,severity,
+       observed_at_utc,evaluated_at_utc,history_count,explanation,execution_source,
+       execution_id,dag_id,airflow_run_id,task_id,attempt_number,map_index,logical_date_utc,details
+FROM monitoring.anomaly_results
+WHERE status = 'ANOMALY'
+OFFSET 0;
+
+CREATE OR REPLACE VIEW monitoring_views.recent_alert_events AS
+SELECT * FROM monitoring.alert_events
+OFFSET 0;
+
+-- Grain: one metric/dataset/layer/dimension series across persisted evaluations.
+CREATE OR REPLACE VIEW monitoring_views.anomaly_summary_by_metric AS
+SELECT metric_name,dataset_name,layer,dimensions,count(*) AS evaluations,
+       count(*) FILTER (WHERE status='NORMAL') AS normal_count,
+       count(*) FILTER (WHERE status='INSUFFICIENT_HISTORY') AS insufficient_history_count,
+       count(*) FILTER (WHERE status='ANOMALY') AS anomaly_count,
+       count(*) FILTER (WHERE status='ANOMALY' AND severity='CRITICAL') AS critical_anomaly_count,
+       max(observed_at_utc) FILTER (WHERE status='ANOMALY') AS latest_anomaly_at_utc
+FROM monitoring.anomaly_results
+GROUP BY metric_name,dataset_name,layer,dimensions;
+
+-- Grain: alert source/severity/status. Severity says urgency and status says lifecycle.
+CREATE OR REPLACE VIEW monitoring_views.alert_summary_by_severity AS
+SELECT source_type,severity,status,count(*) AS alert_count,max(created_at_utc) AS latest_alert_at_utc
+FROM monitoring.alert_events
+GROUP BY source_type,severity,status;
