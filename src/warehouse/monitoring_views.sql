@@ -105,3 +105,25 @@ CREATE OR REPLACE VIEW monitoring_views.alert_summary_by_severity AS
 SELECT source_type,severity,status,count(*) AS alert_count,max(created_at_utc) AS latest_alert_at_utc
 FROM monitoring.alert_events
 GROUP BY source_type,severity,status;
+
+-- One incident instance. OFFSET 0 keeps operational views non-updatable.
+CREATE OR REPLACE VIEW monitoring_views.alert_history AS
+SELECT a.*,
+       extract(epoch FROM (coalesce(resolved_at_utc,now())-first_seen_at_utc)) AS duration_seconds,
+       (first_seen_at_utc AT TIME ZONE 'UTC')::date AS first_seen_date_utc,
+       (last_seen_at_utc AT TIME ZONE 'UTC')::date AS last_seen_date_utc,
+       (resolved_at_utc AT TIME ZONE 'UTC')::date AS resolved_date_utc
+FROM monitoring.alert_events a OFFSET 0;
+
+CREATE OR REPLACE VIEW monitoring_views.active_alerts AS
+SELECT * FROM monitoring_views.alert_history
+WHERE lifecycle_status IN ('OPEN','ACKNOWLEDGED') OFFSET 0;
+
+CREATE OR REPLACE VIEW monitoring_views.alert_summary_by_status AS
+SELECT lifecycle_status,source_type,severity,dataset_name,layer,count(*) AS alert_count,
+       sum(occurrence_count) AS occurrence_count,min(first_seen_at_utc) AS first_seen_at_utc,
+       max(last_seen_at_utc) AS last_seen_at_utc
+FROM monitoring.alert_events GROUP BY lifecycle_status,source_type,severity,dataset_name,layer;
+
+CREATE OR REPLACE VIEW monitoring_views.recurring_alerts AS
+SELECT * FROM monitoring_views.alert_history WHERE occurrence_count>1 OFFSET 0;

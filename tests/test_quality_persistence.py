@@ -75,7 +75,8 @@ class PersistenceAdapterTests(unittest.TestCase):
                           replace(sample_result(Status.FAIL), check_name="fail"))
         context = ExecutionContext(execution_id="fixture")
         with patch("src.quality.persistence.ensure_monitoring_schema") as ensure, \
-             patch("src.quality.persistence.psycopg.connect") as connect:
+             patch("src.quality.persistence.psycopg.connect") as connect, \
+             patch("src.quality.alert_service.record_alert"):
             identity = persist_quality_run(run, context)
         ensure.assert_called_once()
         cursor = connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value

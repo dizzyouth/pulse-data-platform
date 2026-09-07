@@ -26,8 +26,14 @@ SPECS = (
      {"graph.dimensions": ["metric_name"], "graph.metrics": ["anomaly_count"]}),
     ("alerts_by_severity", "Internal alerts by severity", "bar",
      {"graph.dimensions": ["severity"], "graph.metrics": ["alert_count"]}),
+    ("active_alerts", "Active alerts (latest 100)", "table", {}),
+    ("alerts_by_status", "Alerts by lifecycle status", "bar",
+     {"graph.dimensions": ["lifecycle_status"], "graph.metrics": ["alert_count"]}),
+    ("recurring_alerts", "Recurring alerts (latest 100)", "table", {}),
+    ("resolved_alerts", "Recently resolved alerts (latest 100)", "table", {}),
 )
 FILTERS = {"layer": "Layer", "dataset": "Dataset", "status": "Run status",
+           "lifecycle_status": "Lifecycle status",
            "severity": "Severity", "start_date": "Start date (UTC)", "end_date": "End date (UTC)"}
 
 
@@ -82,7 +88,7 @@ def ensure_dashboard(api, unique, database_id):
             existing["parameter_mappings"] = mappings
         else:
             dashcards.append({"id": -(index + 1), "card_id": card["id"], "row": (index // 2) * 9,
-                              "col": (index % 2) * 12, "size_x": 12, "size_y": 9,
+                              "col": (index % 2) * 12, "size_x": 12, "size_y": 7 if index >= 12 else 9,
                               "parameter_mappings": mappings, "visualization_settings": {}})
     parameters.extend(p for p in dashboard.get("parameters", []) if p["id"] not in FILTERS)
     api("PUT", f"/api/dashboard/{dashboard['id']}", {"dashcards": dashcards, "parameters": parameters})

@@ -106,3 +106,48 @@ CREATE INDEX IF NOT EXISTS anomaly_results_flagged_idx ON monitoring.anomaly_res
     WHERE status = 'ANOMALY';
 CREATE INDEX IF NOT EXISTS alert_events_created_idx ON monitoring.alert_events(created_at_utc DESC);
 CREATE INDEX IF NOT EXISTS alert_events_severity_idx ON monitoring.alert_events(severity, status, created_at_utc DESC);
+
+-- Phase 5.6 additive migration. The initializer backfills legacy rows before
+-- installing the unique active-incident index in the same transaction.
+ALTER TABLE monitoring.alert_events DROP CONSTRAINT IF EXISTS alert_events_status_check;
+ALTER TABLE monitoring.alert_events ADD CONSTRAINT alert_events_status_check
+    CHECK (status IN ('OPEN', 'ACKNOWLEDGED', 'RESOLVED'));
+ALTER TABLE monitoring.alert_events
+    ADD COLUMN IF NOT EXISTS lifecycle_status TEXT GENERATED ALWAYS AS (status) STORED,
+    ADD COLUMN IF NOT EXISTS incident_key TEXT,
+    ADD COLUMN IF NOT EXISTS first_seen_at_utc TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS last_seen_at_utc TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS occurrence_count BIGINT NOT NULL DEFAULT 1 CHECK (occurrence_count >= 1),
+    ADD COLUMN IF NOT EXISTS acknowledged_at_utc TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS resolved_at_utc TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS acknowledged_by TEXT,
+    ADD COLUMN IF NOT EXISTS resolved_by TEXT,
+    ADD COLUMN IF NOT EXISTS resolution_note TEXT;
+
+CREATE TABLE IF NOT EXISTS monitoring.alert_event_history (
+    history_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    alert_event_id UUID NOT NULL REFERENCES monitoring.alert_events(alert_event_id),
+    previous_status TEXT CHECK (previous_status IN ('OPEN', 'ACKNOWLEDGED')),
+    new_status TEXT NOT NULL CHECK (new_status IN ('OPEN', 'ACKNOWLEDGED', 'RESOLVED')),
+    changed_at_utc TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    changed_by TEXT NOT NULL CHECK (length(trim(changed_by)) > 0),
+    note TEXT,
+    CHECK ((previous_status IS NULL AND new_status='OPEN') OR
+           (previous_status='OPEN' AND new_status IN ('ACKNOWLEDGED','RESOLVED')) OR
+           (previous_status='ACKNOWLEDGED' AND new_status='RESOLVED'))
+);
+CREATE INDEX IF NOT EXISTS alert_history_event_idx
+    ON monitoring.alert_event_history(alert_event_id, history_id);
+
+-- One receipt per logical execution/check or evaluation/series, excluding retry.
+-- Receipts survive resolution so replay cannot create a fresh incident.
+CREATE TABLE IF NOT EXISTS monitoring.alert_occurrences (
+    occurrence_id UUID PRIMARY KEY,
+    alert_event_id UUID NOT NULL REFERENCES monitoring.alert_events(alert_event_id),
+    incident_key TEXT NOT NULL,
+    observed_at_utc TIMESTAMPTZ NOT NULL,
+    source_id UUID NOT NULL,
+    snapshot JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS alert_occurrences_event_idx
+    ON monitoring.alert_occurrences(alert_event_id);

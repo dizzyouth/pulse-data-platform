@@ -56,7 +56,7 @@ class AnomalyPostgresTests(unittest.TestCase):
 
     def setUp(self):
         with psycopg.connect(**self.config) as connection:
-            connection.execute("TRUNCATE monitoring.alert_events,monitoring.anomaly_results,"
+            connection.execute("TRUNCATE monitoring.alert_event_history,monitoring.alert_occurrences,monitoring.alert_events,monitoring.anomaly_results,"
                                "monitoring.quality_results,monitoring.quality_runs,"
                                "analytics.daily_sales,analytics.funnel_metrics")
 

@@ -1059,9 +1059,10 @@ PostgreSQL adds two tables under the existing `monitoring` schema:
 | `anomaly_results` | One metric series in one logical evaluation. Evaluation/result UUIDs exclude retry attempt; a retry transaction replaces the same evaluation and records the latest attempt. |
 | `alert_events` | Internal conditions requiring attention. Sources are anomaly WARNING/CRITICAL or fixed-rule FAIL+CRITICAL. Deterministic identity prevents duplicate events for the same DAG run/task/series or quality check across retries. |
 
-Alerts have an `OPEN` status; acknowledgement and resolution lifecycle operations
-are deferred. A retry replaces the anomaly evaluation and its derived OPEN events
-inside one transaction. There is no external delivery. For existing critical quality failures, the
+Phase 5.5 introduced alerts with an `OPEN` status and deferred acknowledgement
+and resolution operations. Phase 5.6 retains lifecycle and audit history when a
+retry replaces the anomaly evaluation inside one transaction. There is no
+external delivery. For existing critical quality failures, the
 transaction writes the quality run and results first, then its CRITICAL alert.
 Only after commit does the runner log the summary and return failure, preserving:
 
@@ -1109,10 +1110,189 @@ and retry replacement without modifying live quality history.
 Current limitations: there is no seasonality, day-of-week adjustment, forecasting,
 multivariate model, freshness SLA, alert delivery, escalation, suppression window,
 automatic acknowledgement, remediation, or retention. Sparse and irregularly
-spaced observations are compared as ordered values. Phase 5.6 may add controlled
-delivery and lifecycle operations after operational policy is defined. Slack,
+spaced observations are compared as ordered values. Phase 5.6 adds local lifecycle operations below. External delivery remains deferred. Slack,
 email, PagerDuty, Grafana, Prometheus, external ML, neural networks, complex
 forecasting, OpenLineage, and production paging remain out of scope.
+
+## Phase 5.6: Alert lifecycle and operational response
+
+Internal alerts now have an operational lifecycle independent of quality and
+anomaly calculation. No external notification service is involved.
+
+| State | Exact meaning | Valid next states |
+| --- | --- | --- |
+| `OPEN` | Requires attention | `ACKNOWLEDGED`, `RESOLVED` |
+| `ACKNOWLEDGED` | An operator has accepted ownership; the condition may persist and the alert is still active | `RESOLVED` |
+| `RESOLVED` | Operator has closed this incident instance; it is no longer active | None |
+
+Repeated acknowledgements/resolutions and all other transitions fail explicitly.
+There is no reopen or suppression state. Resolution does not rewrite a quality
+result, unblock a failed Airflow task, or turn an anomaly into NORMAL.
+
+### Incident identity and recurrence
+
+`src/quality/alert_service.py` is the shared transactional service. `incident_key`
+is `v1:` plus SHA-256 of UTF-8 JSON containing this ordered array:
+`["pulse-incident-v1", source_type, dataset_name, layer, metric_name, check_name, dimensions]`.
+JSON keys are sorted, separators are compact, and non-finite numbers are rejected.
+For anomalies, check name is JSON null and dimensions retain the exact series
+values (for example currency or country). For quality failures, check name is
+required and dimensions are currently `{}` because checks assess whole datasets.
+Names are case-sensitive. Severity, observed values, thresholds, timestamps,
+execution source, DAG/task/run IDs, map index, and retry attempt are excluded.
+Consequently, the same dataset contract or series shares one incident across
+local and Airflow executions. Different datasets/layers/checks/dimensions remain
+separate. Policy changes do not by themselves create another incident.
+
+A PostgreSQL partial unique index permits at most one OPEN or ACKNOWLEDGED
+instance per key. Transaction advisory locks serialize concurrent creation,
+recurrence, and operator transitions. A new logical occurrence updates first/last
+observation times using min/max and increments `occurrence_count`. ACKNOWLEDGED
+remains ACKNOWLEDGED. Severity retains the highest urgency seen in the instance;
+latest evidence follows observation time. Older arrivals count without replacing
+newer evidence. Observation timestamps, rather than retry wall-clock timestamps,
+drive first/last seen. These fields describe detections, not polling heartbeats.
+
+`monitoring.alert_occurrences` stores one receipt per logical occurrence. It uses
+the existing Phase 5.5 UUID identities: quality's `pulse-quality-alert-v1` plus
+dataset/layer/check, or anomaly's `pulse-anomaly-alert-v1` plus anomaly result UUID,
+within the execution context. These identities include source/run/task/map index
+but exclude attempt number. Replaying the same logical execution updates active
+evidence without incrementing the count or adding a transition. Its receipt
+survives resolution, so an old retry cannot open a new incident. A genuinely new
+logical execution after resolution creates a new UUID instance with count 1 and
+the same incident key. Counts measure distinct logical executions, not retries,
+unique observation timestamps, or elapsed time.
+
+### Persistence, audit, and recovery policy
+
+`monitoring.alert_events` retains its original columns and UUID/source context.
+The existing `status` column now accepts all three states; `lifecycle_status` is a
+stored generated alias, so these values cannot disagree. Added fields are
+`incident_key` (TEXT), first/last seen and acknowledgement/resolution timestamps
+(TIMESTAMPTZ), occurrence count (BIGINT), operator names and resolution note
+(TEXT). Source UUID/context/details describe the latest evidence. Source IDs are
+polymorphic references without a foreign key because source evaluations can be
+replaced by retries. JSONB occurrence snapshots retain first-received evidence.
+
+`monitoring.alert_event_history` is a minimal transition audit: generated history
+ID, alert UUID foreign key, previous/new status, UTC database timestamp, actor,
+and optional note. Opening, acknowledgement, and resolution are recorded.
+Recurrences use occurrence receipts rather than noisy status-to-same-status audit
+entries. Source persistence, receipt/count changes, and opening audit share one
+transaction. Operator state changes and audit insertion also share one transaction;
+a failed audit write rolls back the state change.
+
+Quality ordering remains: **quality rows written ? alert created/updated ? atomic
+commit ? quality result/summary logged ? blocking exit ? Airflow downstream blocked**.
+Only FAIL+CRITICAL quality checks alert. WARNING/CRITICAL anomalies use the same
+service and remain nonblocking by default. The DAG graph and quality/anomaly
+calculation policies are unchanged. Anomaly retries replace evaluation results
+but never delete incident history or ownership.
+
+**Resolution is manual for both sources.** NORMAL, INSUFFICIENT_HISTORY, a missing
+series, and a passing quality retry do not resolve alerts. A NORMAL observation
+can be historical or revised during retry; safe automatic recovery needs explicit
+observation-order and freshness policy. Operators should inspect current evidence
+before resolving, and use a resolution note. Automatic resolution is deferred.
+
+Initialization is repeatable and transactional:
+
+```powershell
+python -m src.quality.persistence
+python -m src.warehouse.monitoring
+```
+
+The migration preserves old event IDs and evidence, backfills fingerprints and
+receipts, and audits import. If Phase 5.5 contains several OPEN events for one
+condition, the oldest becomes the active representative with the combined count.
+Other rows remain queryable as RESOLVED with an explicit migration consolidation
+note pointing to that representative; this records consolidation, not recovery.
+An orphan legacy anomaly whose metric cannot be recovered receives an isolated
+legacy identity instead of being merged speculatively. No historic quality or
+anomaly result is rewritten by the migration. New raw inserts must supply the
+new incident fields; application producers should use the shared service.
+
+### Local operations
+
+Commands use the existing `WAREHOUSE_*` environment configuration; Airflow is not
+required. `--by` is a required nonblank free-text name, not an authenticated identity.
+
+```powershell
+python -m src.quality.alert_cli list
+python -m src.quality.alert_cli list --status ACKNOWLEDGED --layer analytics
+python -m src.quality.alert_cli list --status ALL --dataset daily_sales --severity CRITICAL --limit 100
+python -m src.quality.alert_cli acknowledge <alert_id> --by alice
+python -m src.quality.alert_cli resolve <alert_id> --by alice --note "Validated current data and recovery"
+```
+
+List defaults to active alerts, newest last-seen first, limit 100 (maximum 1000).
+An empty result is `[]`. Commands output JSON, exit 0 on success, and exit 1 for
+missing alerts, invalid transitions, or sanitized persistence failures. Argument
+syntax errors exit 2. Listing is read-only and assumes initialization is complete.
+Service callers can use `record_alert(cursor, ...)`, `acknowledge_alert`,
+`resolve_alert`, and `list_alerts`; producers must commit the supplied cursor's
+transaction. Supported operations go through this service. Direct database writes
+can bypass application transition/audit rules; DB access is trusted local development.
+
+### Operational views and dashboard
+
+All presentation views remain read-only and have no implicit retention window.
+
+| View | Meaning |
+| --- | --- |
+| `monitoring_views.active_alerts` | OPEN and ACKNOWLEDGED instances |
+| `monitoring_views.alert_history` | Every incident instance, including resolved history |
+| `monitoring_views.alert_summary_by_status` | Instance and occurrence totals by lifecycle/source/severity/dataset/layer |
+| `monitoring_views.alert_summary_by_severity` | Existing compatible instance totals by source/severity/status |
+| `monitoring_views.recurring_alerts` | Instances with more than one logical occurrence, including resolved instances |
+
+Detail views include key, lifecycle, severity, dataset/layer, first/last seen,
+count, operator context, and duration in seconds from first detection to resolution
+(or current time for active incidents). Transition-level audit remains queryable
+in `monitoring.alert_event_history`. Summary counts are incident instances;
+occurrence counts count detections. Historical migration consolidation is visible.
+
+Pulse Platform Health preserves all 12 quality/anomaly cards and adds four cards
+in a compact two-by-two section: Active alerts, Alerts by lifecycle status,
+Recurring alerts, and Recently resolved alerts. Tables display the latest 100
+matches. Provision through `docker compose run --rm --no-deps metabase-setup`.
+Layer, Dataset, and Severity map to supported cards. The separate Lifecycle status
+filter maps only to alert cards; Run status keeps its quality meaning. Dates never
+filter the active queue. The new status/recurrence cards filter inclusive UTC
+last-seen dates; recently resolved filters resolution date. Existing historical
+alert cards keep their creation-date semantics. Status/severity charts count
+instances after filtering; selecting an incompatible lifecycle for a fixed-state
+card correctly returns an empty result. No date selection means all history.
+
+### Validation and limitations
+
+```powershell
+python -m unittest tests.test_alert_lifecycle tests.test_quality_persistence tests.test_anomaly -v
+$env:RUN_MONITORING_INTEGRATION_TESTS='1'
+python -m unittest tests.test_alert_lifecycle tests.test_anomaly_postgres tests.test_monitoring_postgres tests.test_monitoring_presentation -v
+python -m unittest discover -s tests -v
+```
+
+Live SQL tests create/drop disposable databases and cover migration, creation,
+recurrence, concurrency, retries before/after resolution, ownership, terminal
+transitions, audit rollback, quality/anomaly integration, read-only/empty views,
+and dashboard filter semantics. CI discovers the deterministic service/CLI and
+query contracts; PostgreSQL and real Airflow execution remain explicit local
+integration checks. See [Phase 5.6 validation](bi/ALERT_VERIFICATION.md).
+
+Limitations: manual operator verification, no authenticated ownership, no receipt
+or audit retention policy, no automatic recovery, and no guarantee against direct
+SQL bypass. Incident identity does not separate tenants/environments that share
+the same database/dataset names; use separate configured databases. A new CLI
+execution ID counts as a new occurrence even if it inspects the same observation.
+Receipt snapshots are first-received evidence, while anomaly source rows retain
+the established replace-on-retry semantics.
+
+Phase 5.7 may define recovery/freshness rules, retention, and delivery policy.
+Slack, email, PagerDuty, external providers, paging/escalation, RBAC/SSO,
+Grafana/Prometheus, automated remediation, and complex case management remain
+intentionally unimplemented. Nothing in Phase 5.6 sends external notifications.
 
 ## Airflow orchestration
 

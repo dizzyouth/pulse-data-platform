@@ -5,6 +5,7 @@ FROM monitoring_views.recent_alert_events
 WHERE 1=1
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
+[[AND lifecycle_status = {{lifecycle_status}}]]
 [[AND severity = {{severity}}]]
 [[AND (created_at_utc AT TIME ZONE 'UTC')::date >= {{start_date}}]]
 [[AND (created_at_utc AT TIME ZONE 'UTC')::date <= {{end_date}}]]

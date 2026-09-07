@@ -13,16 +13,16 @@ from src.warehouse.load_gold import connection_kwargs
 
 def persist_anomalies(results: list[AnomalyResult], context: ExecutionContext,
                       evaluated_at_utc: datetime | None = None):
-    """Replace a logical evaluation across retries and atomically rebuild its alerts."""
+    """Replace a logical evaluation across retries and retain incident lifecycle."""
     evaluated = datetime.now(timezone.utc) if evaluated_at_utc is None else evaluated_at_utc.astimezone(timezone.utc)
     evaluation_id = context.logical_id("pulse-anomaly-evaluation-v1")
     ensure_monitoring_schema()
     try:
         with psycopg.connect(**connection_kwargs()) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("DELETE FROM monitoring.alert_events WHERE source_type='ANOMALY' AND source_id IN "
-                               "(SELECT anomaly_id FROM monitoring.anomaly_results WHERE evaluation_id=%s)",
-                               (evaluation_id,))
+                # Serialize replacements of the same logical evaluation, including empty retries.
+                cursor.execute("SELECT pg_advisory_xact_lock(%s)",
+                               (int.from_bytes(evaluation_id.bytes[:8], "big", signed=True),))
                 cursor.execute("DELETE FROM monitoring.anomaly_results WHERE evaluation_id=%s", (evaluation_id,))
                 rows = [(result.anomaly_id, evaluation_id, context.execution_source, context.execution_id,
                          context.dag_id, context.airflow_run_id, context.task_id, context.attempt_number,
@@ -38,23 +38,20 @@ def persist_anomalies(results: list[AnomalyResult], context: ExecutionContext,
                     current_value,baseline_value,deviation_value,deviation_percent,threshold,method,status,
                     severity,observed_at_utc,evaluated_at_utc,history_count,explanation,details)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
-                alerts = []
-                for result in results:
+                from src.quality.alert_service import record_alert
+                for result in sorted(results, key=lambda item: (item.dataset_name, item.layer,
+                                     item.metric_name, str(sorted(item.dimensions.items())))):
                     if result.status == AnomalyStatus.ANOMALY:
-                        event_id = context.logical_id("pulse-anomaly-alert-v1", str(result.anomaly_id))
-                        alerts.append((event_id, "ANOMALY", result.anomaly_id, result.dataset_name,
-                                       result.layer, result.severity.value, "OPEN",
-                                       f"{result.severity.value.title()} anomaly: {result.metric_name}",
-                                       result.explanation, evaluated, context.execution_source,
-                                       context.execution_id, context.dag_id, context.airflow_run_id,
-                                       context.task_id, context.attempt_number, context.map_index,
-                                       context.logical_date_utc, Jsonb({"dimensions": result.dimensions,
-                                                                       "method": result.method})))
-                cursor.executemany("""INSERT INTO monitoring.alert_events (
-                    alert_event_id,source_type,source_id,dataset_name,layer,severity,status,title,message,
-                    created_at_utc,execution_source,execution_id,dag_id,airflow_run_id,task_id,
-                    attempt_number,map_index,logical_date_utc,details)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", alerts)
+                        record_alert(cursor,
+                            occurrence_id=context.logical_id("pulse-anomaly-alert-v1", str(result.anomaly_id)),
+                            source_type="ANOMALY", source_id=result.anomaly_id,
+                            dataset_name=result.dataset_name, layer=result.layer, severity=result.severity.value,
+                            title=f"Anomaly: {result.metric_name}", message=result.explanation,
+                            seen_at=result.observed_at_utc, context=context, metric_name=result.metric_name,
+                            dimensions=result.dimensions,
+                            details={"method": result.method, "current_value": result.current_value,
+                                     "baseline_value": result.baseline_value})
+                # NORMAL and INSUFFICIENT_HISTORY never change lifecycle. Resolution is manual.
     except Exception:
         raise PersistenceError("Anomaly persistence failed; the evaluation transaction was rolled back") from None
     return evaluation_id
