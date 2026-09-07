@@ -47,4 +47,3 @@ def migrate_alerts(cursor):
         ALTER COLUMN last_seen_at_utc SET NOT NULL""")
     cursor.execute("""CREATE UNIQUE INDEX IF NOT EXISTS alert_events_active_incident_idx
         ON monitoring.alert_events(incident_key) WHERE status IN ('OPEN','ACKNOWLEDGED')""")
-
