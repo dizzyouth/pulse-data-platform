@@ -143,4 +143,3 @@ STRATEGIES: dict[str, BaselineStrategy] = {
         RobustHistoryBaseline(), DayOfWeekBaseline(), TrendBaseline(), SeasonalTrendBaseline()
     )
 }
-

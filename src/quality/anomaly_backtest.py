@@ -55,4 +55,3 @@ def backtest_series(series: MetricSeries, policy: AnomalyPolicy,
                           insufficient_history_count=len(results) - len(evaluated),
                           alert_rate=anomalies / len(evaluated) if evaluated else 0.0,
                           false_positive_proxy=false_positive)
-
