@@ -31,10 +31,16 @@ SPECS = (
      {"graph.dimensions": ["lifecycle_status"], "graph.metrics": ["alert_count"]}),
     ("recurring_alerts", "Recurring alerts (latest 100)", "table", {}),
     ("resolved_alerts", "Recently resolved alerts (latest 100)", "table", {}),
+    ("recent_deliveries", "Recent alert deliveries (latest 100)", "table", {}),
+    ("failed_deliveries", "Failed alert deliveries (latest 100)", "table", {}),
+    ("delivery_status_by_provider", "Delivery status by provider", "bar",
+     {"graph.dimensions": ["provider", "delivery_status"], "graph.metrics": ["delivery_attempts"]}),
+    ("escalated_active_alerts", "Escalated active alerts (latest 100)", "table", {}),
 )
 FILTERS = {"layer": "Layer", "dataset": "Dataset", "status": "Run status",
            "lifecycle_status": "Lifecycle status",
-           "severity": "Severity", "start_date": "Start date (UTC)", "end_date": "End date (UTC)"}
+           "severity": "Severity", "delivery_status": "Delivery status", "provider": "Provider",
+           "start_date": "Start date (UTC)", "end_date": "End date (UTC)"}
 
 
 def question_query(filename, database_id):

@@ -27,6 +27,11 @@ from src.orchestration.dag_config import (
     TASK_IDS,
     TASK_RETRIES,
 )
+from src.orchestration.alert_operations_config import (
+    ALERT_OPERATIONS_DAG_ID,
+    ALERT_OPERATIONS_SCHEDULE,
+    ALERT_OPERATIONS_TASK_ID,
+)
 from src.orchestration.validation import (
     validate_bronze_available,
     validate_gold_output,
@@ -66,6 +71,23 @@ class FakeBashOperator:
 
 
 class AirflowDagContractTests(unittest.TestCase):
+    @staticmethod
+    def import_dag(filename, module_name):
+        airflow = types.ModuleType("airflow")
+        airflow.DAG = FakeDag
+        operators = types.ModuleType("airflow.operators")
+        bash = types.ModuleType("airflow.operators.bash")
+        bash.BashOperator = FakeBashOperator
+        dag_path = Path(__file__).resolve().parents[1] / "airflow" / "dags" / filename
+        spec = importlib.util.spec_from_file_location(module_name, dag_path)
+        module = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {
+            "airflow": airflow, "airflow.operators": operators, "airflow.operators.bash": bash,
+        }):
+            assert spec.loader is not None
+            spec.loader.exec_module(module)
+        return module
+
     def test_dag_imports_with_expected_manual_task_graph(self) -> None:
         airflow = types.ModuleType("airflow")
         airflow.DAG = FakeDag
@@ -127,6 +149,18 @@ class AirflowDagContractTests(unittest.TestCase):
                          "python -m src.quality.anomaly_runner --persist --log-format jsonl")
         self.assertEqual(anomaly.kwargs["trigger_rule"], "all_success")
         self.assertNotIn("--block-on-critical", anomaly.kwargs["bash_command"])
+
+    def test_alert_operations_dag_is_scheduled_and_independent(self) -> None:
+        module = self.import_dag("pulse_alert_operations.py", "pulse_alert_operations_test")
+        self.assertEqual(module.dag.dag_id, ALERT_OPERATIONS_DAG_ID)
+        self.assertEqual(module.dag.schedule, ALERT_OPERATIONS_SCHEDULE)
+        self.assertEqual(module.dag.default_args["retries"], 0)
+        self.assertEqual(set(module.dag.task_dict), {ALERT_OPERATIONS_TASK_ID})
+        task = module.dag.task_dict[ALERT_OPERATIONS_TASK_ID]
+        self.assertEqual(task.kwargs["bash_command"], "python -m src.quality.delivery_cli sweep --limit 100")
+        self.assertEqual(task.kwargs["cwd"], "/opt/pulse")
+        self.assertFalse(task.kwargs["do_xcom_push"])
+        self.assertEqual(task.downstream_task_ids, set())
 
 
 @unittest.skipUnless(os.environ.get("RUN_SPARK_TESTS", "1") == "1", "Spark tests disabled")

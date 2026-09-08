@@ -151,3 +151,34 @@ CREATE TABLE IF NOT EXISTS monitoring.alert_occurrences (
 );
 CREATE INDEX IF NOT EXISTS alert_occurrences_event_idx
     ON monitoring.alert_occurrences(alert_event_id);
+
+-- Phase 5.7 delivery outbox. A logical notification may have several bounded
+-- physical attempts, while the versioned logical key prevents duplicate work.
+CREATE TABLE IF NOT EXISTS monitoring.alert_deliveries (
+    delivery_id UUID PRIMARY KEY,
+    alert_event_id UUID NOT NULL REFERENCES monitoring.alert_events(alert_event_id),
+    logical_delivery_key TEXT NOT NULL,
+    provider TEXT NOT NULL CHECK (length(trim(provider)) > 0),
+    destination_key TEXT NOT NULL CHECK (length(trim(destination_key)) > 0),
+    delivery_kind TEXT NOT NULL CHECK (delivery_kind IN ('INITIAL', 'RECURRENCE', 'ESCALATION')),
+    delivery_version INTEGER NOT NULL CHECK (delivery_version >= 1),
+    escalation_level INTEGER NOT NULL DEFAULT 0 CHECK (escalation_level >= 0),
+    delivery_status TEXT NOT NULL CHECK (delivery_status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED')),
+    attempted_at_utc TIMESTAMPTZ NOT NULL,
+    completed_at_utc TIMESTAMPTZ,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number >= 1),
+    external_reference TEXT,
+    error_message TEXT,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    UNIQUE (logical_delivery_key, attempt_number),
+    CHECK ((delivery_status = 'PENDING' AND completed_at_utc IS NULL) OR
+           (delivery_status <> 'PENDING' AND completed_at_utc IS NOT NULL)),
+    CHECK ((delivery_kind = 'ESCALATION' AND escalation_level >= 1) OR
+           (delivery_kind <> 'ESCALATION' AND escalation_level = 0))
+);
+CREATE INDEX IF NOT EXISTS alert_deliveries_event_idx
+    ON monitoring.alert_deliveries(alert_event_id, attempted_at_utc DESC);
+CREATE INDEX IF NOT EXISTS alert_deliveries_status_idx
+    ON monitoring.alert_deliveries(delivery_status, attempted_at_utc DESC);
+CREATE INDEX IF NOT EXISTS alert_deliveries_logical_idx
+    ON monitoring.alert_deliveries(logical_delivery_key, attempt_number DESC);

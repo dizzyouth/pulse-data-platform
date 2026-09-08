@@ -127,3 +127,82 @@ FROM monitoring.alert_events GROUP BY lifecycle_status,source_type,severity,data
 
 CREATE OR REPLACE VIEW monitoring_views.recurring_alerts AS
 SELECT * FROM monitoring_views.alert_history WHERE occurrence_count>1 OFFSET 0;
+
+-- Grain: one physical provider attempt, enriched with safe routing context.
+CREATE OR REPLACE VIEW monitoring_views.recent_deliveries AS
+SELECT d.delivery_id,d.alert_event_id,d.logical_delivery_key,d.provider,d.destination_key,
+       d.delivery_kind,d.delivery_version,d.escalation_level,d.delivery_status,
+       d.attempted_at_utc,d.completed_at_utc,d.attempt_number,d.external_reference,
+       d.error_message,d.details AS delivery_details,a.source_type,a.dataset_name,a.layer,
+       a.severity,a.lifecycle_status,a.title,a.first_seen_at_utc,a.last_seen_at_utc,
+       a.occurrence_count,(d.attempted_at_utc AT TIME ZONE 'UTC')::date AS attempted_date_utc
+FROM monitoring.alert_deliveries d
+JOIN monitoring.alert_events a USING (alert_event_id)
+OFFSET 0;
+
+CREATE OR REPLACE VIEW monitoring_views.failed_deliveries AS
+SELECT * FROM monitoring_views.recent_deliveries
+WHERE delivery_status='FAILED' OFFSET 0;
+
+-- Dimensions are retained so consumers can apply compatible filters before
+-- rolling up provider status totals.
+CREATE OR REPLACE VIEW monitoring_views.delivery_summary_by_provider AS
+SELECT provider,destination_key,delivery_status,delivery_kind,dataset_name,layer,
+       severity,lifecycle_status,attempted_date_utc,count(*) AS delivery_attempts,
+       max(attempted_at_utc) AS latest_attempt_at_utc
+FROM monitoring_views.recent_deliveries
+GROUP BY provider,destination_key,delivery_status,delivery_kind,dataset_name,layer,
+         severity,lifecycle_status,attempted_date_utc;
+
+-- One active alert/provider pair with a successfully delivered escalation.
+CREATE OR REPLACE VIEW monitoring_views.escalation_summary AS
+SELECT a.alert_event_id,a.lifecycle_status,a.severity,a.dataset_name,a.layer,a.title,
+       a.first_seen_at_utc,a.last_seen_at_utc,a.occurrence_count,d.provider,d.destination_key,
+       max(d.escalation_level) AS escalation_level,max(d.completed_at_utc) AS escalated_at_utc,
+       count(*) AS escalation_deliveries
+FROM monitoring.alert_events a
+JOIN monitoring.alert_deliveries d USING (alert_event_id)
+WHERE a.status IN ('OPEN','ACKNOWLEDGED') AND d.delivery_kind='ESCALATION'
+  AND d.delivery_status='SENT'
+GROUP BY a.alert_event_id,a.lifecycle_status,a.severity,a.dataset_name,a.layer,a.title,
+         a.first_seen_at_utc,a.last_seen_at_utc,a.occurrence_count,d.provider,d.destination_key;
+
+-- Session callers may set pulse.monitoring_retention_days. Metabase and ordinary
+-- SQL sessions receive the documented conservative 90-day default.
+CREATE OR REPLACE VIEW monitoring_views.retention_eligible_counts AS
+WITH settings AS (
+    SELECT clock_timestamp() - make_interval(days =>
+        coalesce(nullif(current_setting('pulse.monitoring_retention_days',true),''),'90')::integer
+    ) AS cutoff_at_utc
+), eligible_alerts AS (
+    SELECT a.alert_event_id FROM monitoring.alert_events a,settings s
+    WHERE a.status='RESOLVED' AND a.resolved_at_utc<s.cutoff_at_utc
+), eligible_quality_runs AS (
+    SELECT r.quality_run_id FROM monitoring.quality_runs r,settings s
+    WHERE r.completed_at_utc<s.cutoff_at_utc AND NOT EXISTS (
+        SELECT 1 FROM monitoring.quality_results q
+        JOIN monitoring.alert_events a ON a.source_type='QUALITY_FAILURE'
+                                      AND a.source_id=q.quality_result_id
+        WHERE q.quality_run_id=r.quality_run_id
+          AND NOT EXISTS (SELECT 1 FROM eligible_alerts e WHERE e.alert_event_id=a.alert_event_id)
+    )
+), eligible_anomalies AS (
+    SELECT r.anomaly_id FROM monitoring.anomaly_results r,settings s
+    WHERE r.evaluated_at_utc<s.cutoff_at_utc AND NOT EXISTS (
+        SELECT 1 FROM monitoring.alert_events a WHERE a.source_type='ANOMALY'
+          AND a.source_id=r.anomaly_id
+          AND NOT EXISTS (SELECT 1 FROM eligible_alerts e WHERE e.alert_event_id=a.alert_event_id)
+    )
+)
+SELECT 'alert_deliveries'::text AS relation_name,count(*)::bigint AS eligible_rows
+FROM monitoring.alert_deliveries d WHERE EXISTS (
+    SELECT 1 FROM eligible_alerts e WHERE e.alert_event_id=d.alert_event_id)
+UNION ALL SELECT 'alert_event_history',count(*) FROM monitoring.alert_event_history h WHERE EXISTS (
+    SELECT 1 FROM eligible_alerts e WHERE e.alert_event_id=h.alert_event_id)
+UNION ALL SELECT 'alert_occurrences',count(*) FROM monitoring.alert_occurrences o WHERE EXISTS (
+    SELECT 1 FROM eligible_alerts e WHERE e.alert_event_id=o.alert_event_id)
+UNION ALL SELECT 'alert_events',count(*) FROM eligible_alerts
+UNION ALL SELECT 'anomaly_results',count(*) FROM eligible_anomalies
+UNION ALL SELECT 'quality_results',count(*) FROM monitoring.quality_results q WHERE EXISTS (
+    SELECT 1 FROM eligible_quality_runs r WHERE r.quality_run_id=q.quality_run_id)
+UNION ALL SELECT 'quality_runs',count(*) FROM eligible_quality_runs;

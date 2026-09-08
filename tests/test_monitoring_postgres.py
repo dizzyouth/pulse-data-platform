@@ -52,10 +52,18 @@ class MonitoringPostgresTests(unittest.TestCase):
         ensure_monitoring_schema()
         tables = self.fetch("SELECT tablename FROM pg_tables WHERE schemaname='monitoring'")
         self.assertEqual({row[0] for row in tables},
-                         {"quality_runs", "quality_results", "anomaly_results", "alert_events", "alert_event_history", "alert_occurrences"})
+                         {"quality_runs", "quality_results", "anomaly_results", "alert_events",
+                          "alert_event_history", "alert_occurrences", "alert_deliveries"})
         indexes = self.fetch("SELECT indexname FROM pg_indexes WHERE schemaname='monitoring'")
         self.assertTrue({"quality_runs_completed_idx", "quality_runs_dataset_idx", "quality_runs_layer_idx",
-                         "quality_runs_status_idx", "quality_results_critical_idx"} <= {row[0] for row in indexes})
+                         "quality_runs_status_idx", "quality_results_critical_idx",
+                         "alert_deliveries_event_idx", "alert_deliveries_status_idx",
+                         "alert_deliveries_logical_idx"} <= {row[0] for row in indexes})
+        delivery_fk = self.fetch("""SELECT ccu.table_name FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name=tc.constraint_name
+            WHERE tc.table_schema='monitoring' AND tc.table_name='alert_deliveries'
+              AND tc.constraint_type='FOREIGN KEY'""")
+        self.assertEqual(delivery_fk, [("alert_events",)])
         with psycopg.connect(**self.config) as connection, self.assertRaises(psycopg.errors.ForeignKeyViolation):
             connection.execute("""INSERT INTO monitoring.quality_results VALUES
                 (%s,%s,'orphan','count','FAIL','CRITICAL','0','1',now(),'{}')""", (uuid4(), uuid4()))

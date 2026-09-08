@@ -1289,10 +1289,161 @@ execution ID counts as a new occurrence even if it inspects the same observation
 Receipt snapshots are first-received evidence, while anomaly source rows retain
 the established replace-on-retry semantics.
 
-Phase 5.7 may define recovery/freshness rules, retention, and delivery policy.
-Slack, email, PagerDuty, external providers, paging/escalation, RBAC/SSO,
-Grafana/Prometheus, automated remediation, and complex case management remain
-intentionally unimplemented. Nothing in Phase 5.6 sends external notifications.
+Phase 5.7 below defines retention and local delivery/basic-escalation policy.
+Recovery/freshness rules, Slack, email, PagerDuty, external providers, production
+paging, RBAC/SSO, Grafana/Prometheus, automated remediation, and complex case
+management remain intentionally unimplemented. Nothing in Phase 5.6 itself sends
+external notifications.
+
+## Phase 5.7: Alert delivery, escalation, and retention
+
+Phase 5.7 adds an operational delivery layer around the Phase 5.6 lifecycle. It
+does not change quality checks, anomaly classification, incident identity,
+manual acknowledgement/resolution, or analytics-pipeline failure behavior.
+
+### Delivery architecture and provider
+
+`src/quality/notifications.py` defines the provider-neutral contract
+`send(alert, context) -> DeliveryResult`. `src/quality/delivery.py` discovers due
+work, claims an attempt in PostgreSQL, calls the provider outside the database
+transaction, and finalizes the attempt. Lifecycle producers do not import or
+call a concrete provider.
+
+The only Phase 5.7 provider is `log`, and it is the default. It emits identifiers,
+routing fields, severity, dataset, and layer to the `pulse.alert_delivery` Python
+logger; it performs no network I/O and deliberately omits the alert message and
+details. No webhook, SMTP server, credentials, or CI secrets are configured.
+`ALERT_DELIVERY_PROVIDER` therefore accepts only `log` in this phase.
+
+Airflow runs `python -m src.quality.delivery_cli sweep --limit 100` in the
+independent `pulse_alert_operations` DAG every five minutes. The analytics DAG
+has no dependency on this DAG. Provider exceptions become FAILED rows and the
+sweep still exits successfully, so provider availability cannot fail or block
+Bronze, Silver, Gold, warehouse, anomaly, dbt, or Metabase processing. Storage or
+configuration errors fail only the operations task and are sanitized.
+
+`monitoring.alert_deliveries` stores one row per physical attempt:
+delivery/alert UUIDs, logical key, provider and non-secret destination key,
+delivery kind/version, escalation level, status, UTC attempt/completion times,
+attempt number, optional external reference/error, and JSONB details.
+
+| Delivery status | Meaning |
+| --- | --- |
+| `PENDING` | The attempt is durably claimed and provider execution has not been finalized |
+| `SENT` | The provider reported success |
+| `FAILED` | The provider raised or reported failure; the attempt remains visible and retryable within policy |
+| `SKIPPED` | The provider deliberately performed no delivery; this is terminal for the logical delivery |
+
+### Triggers, idempotency, retry, and escalation
+
+An OPEN WARNING or CRITICAL incident is eligible for one INITIAL delivery.
+RESOLVED incidents never deliver. ACKNOWLEDGED incidents do not receive an
+initial notification or escalation if they are acknowledged before the sweep.
+NORMAL and INSUFFICIENT_HISTORY anomaly observations do not create alert events,
+so they are ineligible. Fixed quality policy remains unchanged: only
+FAIL+CRITICAL quality results alert; WARNING delivery is exercised by anomaly
+alerts and synthetic fixtures.
+
+The exact logical key is `v1:` plus SHA-256 of compact UTF-8 JSON containing:
+
+```text
+["pulse-delivery-v1", alert_event_id, provider, destination_key, delivery_kind, delivery_version]
+```
+
+INITIAL uses version 1, ESCALATION uses level/version 1, and RECURRENCE uses the
+configured occurrence threshold as its version. Attempt UUID is UUIDv5 of the
+logical key plus attempt number. PostgreSQL uniquely constrains
+`(logical_delivery_key, attempt_number)` and an advisory lock serializes claims.
+Repeated or concurrent sweeps cannot add a second successful logical delivery.
+This is database idempotency, not a claim of exactly-once behavior in an external
+system that has accepted work immediately before a process crash.
+
+FAILED attempts retry after `ALERT_DELIVERY_RETRY_MINUTES` (default 5), up to
+`ALERT_DELIVERY_MAX_ATTEMPTS` total attempts (default 3). SENT, SKIPPED, and
+PENDING attempts are not automatically duplicated. An explicit CLI retry
+bypasses the delay but not the attempt bound, terminal-state rule, or current
+lifecycle eligibility.
+
+WARNING has initial delivery only. CRITICAL receives exactly one level-1
+escalation when its initial delivery is SENT, its first-seen age reaches
+`ALERT_CRITICAL_ESCALATION_MINUTES` (default 60), and it remains OPEN. An
+ACKNOWLEDGED or RESOLVED alert never escalates. Escalation state is derived from
+delivery rows; `alert_events` has no duplicate escalation columns.
+
+Recurrence delivery is disabled by default with `ALERT_RECURRENCE_THRESHOLD=0`.
+Setting it to an integer of at least 2 permits one RECURRENCE delivery once the
+incident reaches that occurrence count. This is the only delivery allowed for an
+ACKNOWLEDGED incident. It does not page repeatedly at every multiple; changing
+the configured threshold creates a distinct versioned recurrence notification.
+
+```powershell
+python -m src.quality.delivery_cli sweep
+python -m src.quality.delivery_cli pending
+python -m src.quality.delivery_cli retry <delivery_id>
+```
+
+Commands output JSON. `pending` lists PENDING and FAILED attempts oldest first.
+Provider failures are reflected in the sweep summary with exit code 0. Invalid
+configuration, database errors, unknown IDs, ineligible alerts, non-latest
+attempts, and exhausted retries exit 1; argument errors exit 2.
+
+### Retention policy and CLI
+
+Retention is manual and defaults to `MONITORING_RETENTION_DAYS=90` (valid range
+1 to 3650). Nothing is deleted by Airflow or initialization. Eligibility uses the
+following UTC timestamps:
+
+| History | Eligibility |
+| --- | --- |
+| Quality runs/results | Run completion is older than cutoff and no retained alert references a result in the run |
+| Anomaly results | Evaluation is older than cutoff and no retained alert references the result |
+| Alert events/history/occurrences/deliveries | The parent alert is RESOLVED and its resolution is older than cutoff |
+
+Every OPEN or ACKNOWLEDGED alert is preserved, together with its occurrences,
+audit, deliveries, and referenced quality/anomaly source evidence. Recent
+resolved alerts and their source evidence are also retained. Apply locks eligible
+alert parents, reports the pre-delete counts, deletes child rows before parents,
+and commits all relations together. A failure rolls back the whole operation;
+repeated preview/apply calls are idempotent.
+
+```powershell
+python -m src.quality.retention_cli preview
+python -m src.quality.retention_cli preview --days 120
+python -m src.quality.retention_cli apply --confirm
+python -m src.quality.retention_cli apply --days 120 --confirm
+```
+
+`apply` without `--confirm` exits 1 and deletes nothing. Preview is read-only and
+returns per-relation and total row counts. The read-only
+`monitoring_views.retention_eligible_counts` view uses 90 days by default; SQL
+clients may set the session key `pulse.monitoring_retention_days` before querying
+it. The CLI computes its report directly from its configured cutoff.
+
+### Delivery views and dashboard
+
+The presentation schema adds `recent_deliveries`, `failed_deliveries`,
+`delivery_summary_by_provider`, `escalation_summary`, and
+`retention_eligible_counts`. All are ordinary non-updatable views and none mutate
+operational history.
+
+Pulse Platform Health retains its existing 16 cards and adds one compact
+two-by-two operations section: Recent alert deliveries, Failed alert deliveries,
+Delivery status by provider, and Escalated active alerts. Layer, Dataset,
+Severity, Lifecycle status, Provider, Delivery status, and inclusive UTC date
+filters map only to queries containing compatible fields. Run status remains a
+quality-only filter. Re-running Metabase setup updates the managed questions and
+preserves their IDs, unrelated cards, and custom dashboard parameters.
+
+Configuration defaults are documented in `.env.example` and passed only to the
+Airflow services by Compose. Destination keys are routing aliases, not endpoint
+URLs or credentials. No secret is printed or stored by the log provider.
+
+Phase 5.7 intentionally has no external provider, PagerDuty/Opsgenie/SMS,
+on-call rotations, distributed queue, automatic remediation, RBAC/SSO, secret
+manager, or incident case system. A crash after a PENDING claim requires operator
+inspection; stale-claim recovery and an optional real webhook with downstream
+idempotency support are appropriate Phase 5.8 work, along with richer routing and
+multi-level escalation.
 
 ## Airflow orchestration
 

@@ -4,7 +4,7 @@ Run `python -m src.quality.persistence` and `python -m src.warehouse.monitoring`
 with the existing warehouse configuration, then `docker compose run --rm metabase-setup`
 after the dbt pipeline has populated its marts. Setup also provisions the separate
 **Pulse Platform Health** dashboard; see the Phase 5.4 section in [README](../README.md)
-and the Phase 5.5 section for its four anomaly/alert cards, Severity filter,
+and the Phase 5.5 through 5.7 sections for anomaly, lifecycle, delivery/operations cards and filters,
 statistical semantics, and default nonblocking policy. The script initializes a fresh instance, or logs into the existing
 instance, verifies the warehouse and all six SQL queries, and reconciles one
 `Pulse Marketplace` collection, six questions, and this dashboard. It prints the

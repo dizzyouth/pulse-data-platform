@@ -106,7 +106,7 @@ class AlertPostgresTests(unittest.TestCase):
 
     def setUp(self):
         with psycopg.connect(**self.config) as connection:
-            connection.execute("TRUNCATE monitoring.alert_event_history,monitoring.alert_occurrences,"
+            connection.execute("TRUNCATE monitoring.alert_deliveries,monitoring.alert_event_history,monitoring.alert_occurrences,"
                                "monitoring.alert_events,monitoring.anomaly_results,"
                                "monitoring.quality_results,monitoring.quality_runs")
         self.time = datetime(2026, 1, 8, tzinfo=timezone.utc)
