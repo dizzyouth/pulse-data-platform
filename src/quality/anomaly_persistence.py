@@ -11,6 +11,22 @@ from src.quality.persistence import PersistenceError, ensure_monitoring_schema, 
 from src.warehouse.load_gold import connection_kwargs
 
 
+def _result_details(result: AnomalyResult):
+    """Make the result model authoritative for persisted contextual metadata."""
+    return {**result.details,
+            "baseline_strategy": result.baseline_strategy,
+            "expected_value": result.expected_value,
+            "lower_bound": result.lower_bound,
+            "upper_bound": result.upper_bound,
+            "trend_slope": result.trend_slope,
+            "seasonal_reference_count": result.seasonal_reference_count,
+            "training_window_size": result.training_window_size,
+            "model_error": result.model_error,
+            "residual": result.residual,
+            "fallback_used": result.fallback_used,
+            "confidence": result.confidence.value}
+
+
 def persist_anomalies(results: list[AnomalyResult], context: ExecutionContext,
                       evaluated_at_utc: datetime | None = None):
     """Replace a logical evaluation across retries and retain incident lifecycle."""
@@ -31,7 +47,7 @@ def persist_anomalies(results: list[AnomalyResult], context: ExecutionContext,
                          result.baseline_value, result.deviation_value, result.deviation_percent,
                          Jsonb(json_value(result.threshold)), result.method, result.status.value,
                          result.severity.value, result.observed_at_utc, evaluated, result.history_count,
-                         result.explanation, Jsonb(json_value(result.details))) for result in results]
+                         result.explanation, Jsonb(json_value(_result_details(result)))) for result in results]
                 cursor.executemany("""INSERT INTO monitoring.anomaly_results (
                     anomaly_id,evaluation_id,execution_source,execution_id,dag_id,airflow_run_id,task_id,
                     attempt_number,map_index,logical_date_utc,metric_name,dataset_name,layer,dimensions,
@@ -50,7 +66,9 @@ def persist_anomalies(results: list[AnomalyResult], context: ExecutionContext,
                             seen_at=result.observed_at_utc, context=context, metric_name=result.metric_name,
                             dimensions=result.dimensions,
                             details={"method": result.method, "current_value": result.current_value,
-                                     "baseline_value": result.baseline_value})
+                                     "baseline_value": result.baseline_value,
+                                     "baseline_strategy": result.baseline_strategy,
+                                     "confidence": result.confidence.value})
                 # NORMAL and INSUFFICIENT_HISTORY never change lifecycle. Resolution is manual.
     except Exception:
         raise PersistenceError("Anomaly persistence failed; the evaluation transaction was rolled back") from None

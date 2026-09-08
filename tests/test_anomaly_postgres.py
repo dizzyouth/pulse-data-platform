@@ -10,7 +10,8 @@ from uuid import uuid4
 import psycopg
 from psycopg import sql
 
-from src.quality.anomaly import AnomalyResult, AnomalyStatus
+from src.quality.anomaly import (AnomalyPolicy, AnomalyResult, AnomalyStatus,
+                                 BaselineConfidence, MetricSeries, evaluate)
 from src.quality.anomaly_persistence import persist_anomalies
 from src.quality.anomaly_sources import load_metric_series
 from src.quality.execution import ExecutionContext
@@ -47,7 +48,8 @@ class AnomalyPostgresTests(unittest.TestCase):
             connection.execute("""CREATE TABLE analytics.funnel_metrics (
                 event_date date,country text,view_to_cart_rate double precision,
                 cart_to_checkout_rate double precision,checkout_to_order_rate double precision,
-                order_to_payment_rate double precision)""")
+                order_to_payment_rate double precision,product_views bigint,cart_adds bigint,
+                checkouts_started bigint,orders_created bigint)""")
 
     @classmethod
     def cleanup_database(cls):
@@ -102,6 +104,23 @@ class AnomalyPostgresTests(unittest.TestCase):
                          [("INSUFFICIENT_HISTORY", 1), ("NORMAL", 1)])
         self.assertEqual(self.fetch("SELECT count(*) FROM monitoring.alert_events"), [(0,)])
 
+    def test_contextual_metadata_persists_in_existing_jsonb(self):
+        context = self.context()
+        timestamps = tuple(datetime(2025, 12, 1, tzinfo=timezone.utc) + timedelta(days=index)
+                           for index in range(39))
+        series = MetricSeries(metric_name="gross_revenue", dataset_name="daily_sales", layer="analytics",
+                              dimensions={"currency": "USD"}, history=tuple(100 + index for index in range(38)),
+                              current_value=138, history_observed_at_utc=timestamps[:-1],
+                              observed_at_utc=timestamps[-1])
+        result = evaluate(series, AnomalyPolicy(baseline_strategies=("trend",)), uuid4())
+        persist_anomalies([result], context)
+        row = self.fetch("SELECT details->>'baseline_strategy',details->>'confidence',"
+                         "(details->>'expected_value')::double precision,"
+                         "(details->>'lower_bound')::double precision < (details->>'upper_bound')::double precision "
+                         "FROM monitoring.anomaly_results")
+        self.assertEqual(row[0][:3], ("trend", BaselineConfidence.HIGH.value, 138))
+        self.assertTrue(row[0][3])
+
     def test_critical_quality_failure_alert_is_deduplicated_across_retry(self):
         context = replace(self.context(), task_id="quality_check_warehouse")
         result = replace(sample_result(Status.FAIL, Severity.CRITICAL), dataset_name="fixture", layer="analytics")
@@ -147,7 +166,7 @@ class AnomalyPostgresTests(unittest.TestCase):
                 day = (base + timedelta(days=index)).date()
                 connection.execute("INSERT INTO analytics.daily_sales VALUES (%s,'USD',%s,%s),(%s,'EUR',%s,%s)",
                                    (day, index + 1, 100 + index, day, index + 2, 200 + index))
-                connection.execute("INSERT INTO analytics.funnel_metrics VALUES (%s,'US',%s,.5,.5,.5)",
+                connection.execute("INSERT INTO analytics.funnel_metrics VALUES (%s,'US',%s,.5,.5,.5,200,150,120,100)",
                                    (day, .5 + index / 100))
         series = load_metric_series()
         indexed = {(item.metric_name, tuple(sorted(item.dimensions.items()))): item for item in series}
@@ -156,6 +175,8 @@ class AnomalyPostgresTests(unittest.TestCase):
         self.assertEqual(indexed[("gross_revenue", (("currency", "USD"),))].current_value, 107)
         self.assertEqual(indexed[("gross_revenue", (("currency", "EUR"),))].current_value, 207)
         self.assertEqual(len(indexed[("view_to_cart_rate", (("country", "US"),))].history), 7)
+        self.assertEqual(indexed[("view_to_cart_rate", (("country", "US"),))].current_sample_size, 200)
+        self.assertEqual(len(indexed[("gross_revenue", (("currency", "USD"),))].history_observed_at_utc), 7)
 
     def test_new_presentation_views_are_read_only_and_semantically_exact(self):
         context = self.context()
@@ -163,7 +184,9 @@ class AnomalyPostgresTests(unittest.TestCase):
         views = {row[0]: row[1:] for row in self.fetch("SELECT table_name,is_updatable,is_insertable_into "
                  "FROM information_schema.views WHERE table_schema='monitoring_views'")}
         for name in ("recent_anomalies", "recent_alert_events", "anomaly_summary_by_metric",
-                     "alert_summary_by_severity"):
+                     "alert_summary_by_severity", "anomaly_baseline_history",
+                     "anomalies_by_strategy", "anomaly_confidence_summary",
+                     "baseline_fallback_summary"):
             self.assertEqual(views[name], ("NO", "NO"))
         self.assertEqual(self.fetch("SELECT status,severity FROM monitoring_views.recent_anomalies"),
                          [("ANOMALY", "CRITICAL")])
@@ -172,6 +195,12 @@ class AnomalyPostgresTests(unittest.TestCase):
         self.assertEqual(self.fetch("SELECT source_type,severity,status,alert_count FROM "
                                     "monitoring_views.alert_summary_by_severity"),
                          [("ANOMALY", "CRITICAL", "OPEN", 1)])
+        baseline = self.fetch("SELECT baseline_strategy,expected_value,confidence,fallback_used "
+                              "FROM monitoring_views.anomaly_baseline_history")
+        self.assertEqual(baseline, [("robust_history", 100, "LOW", False)])
+        self.assertEqual(self.fetch("SELECT baseline_strategy,anomaly_count FROM "
+                                    "monitoring_views.anomalies_by_strategy"),
+                         [("robust_history", 1)])
 
 
 if __name__ == "__main__":

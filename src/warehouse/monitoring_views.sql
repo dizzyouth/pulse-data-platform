@@ -100,6 +100,51 @@ SELECT metric_name,dataset_name,layer,dimensions,count(*) AS evaluations,
 FROM monitoring.anomaly_results
 GROUP BY metric_name,dataset_name,layer,dimensions;
 
+-- Contextual fields remain JSONB in the write model for backward compatibility,
+-- and are projected here as typed, read-only reporting columns.
+CREATE OR REPLACE VIEW monitoring_views.anomaly_baseline_history AS
+SELECT anomaly_id,evaluation_id,metric_name,dataset_name,layer,dimensions,severity,status,
+       observed_at_utc,evaluated_at_utc,current_value AS observed_value,
+       coalesce((details->>'expected_value')::double precision,baseline_value) AS expected_value,
+       (details->>'lower_bound')::double precision AS lower_bound,
+       (details->>'upper_bound')::double precision AS upper_bound,
+       coalesce(details->>'baseline_strategy','robust_history') AS baseline_strategy,
+       (details->>'trend_slope')::double precision AS trend_slope,
+       coalesce((details->>'seasonal_reference_count')::integer,0) AS seasonal_reference_count,
+       coalesce((details->>'training_window_size')::integer,history_count) AS training_window_size,
+       (details->>'model_error')::double precision AS model_error,
+       coalesce((details->>'fallback_used')::boolean,false) AS fallback_used,
+       coalesce(details->>'confidence','LOW') AS confidence,explanation
+FROM monitoring.anomaly_results
+OFFSET 0;
+
+-- Daily grains retain compatible dashboard dimensions before presentation rollup.
+CREATE OR REPLACE VIEW monitoring_views.anomalies_by_strategy AS
+SELECT baseline_strategy,dataset_name,layer,severity,status,
+       (observed_at_utc AT TIME ZONE 'UTC')::date AS observed_date_utc,
+       count(*) AS evaluation_count,
+       count(*) FILTER (WHERE status='ANOMALY') AS anomaly_count
+FROM monitoring_views.anomaly_baseline_history
+GROUP BY baseline_strategy,dataset_name,layer,severity,status,
+         (observed_at_utc AT TIME ZONE 'UTC')::date;
+
+CREATE OR REPLACE VIEW monitoring_views.anomaly_confidence_summary AS
+SELECT confidence,baseline_strategy,dataset_name,layer,severity,status,
+       (observed_at_utc AT TIME ZONE 'UTC')::date AS observed_date_utc,
+       count(*) AS evaluation_count,
+       count(*) FILTER (WHERE status='ANOMALY') AS anomaly_count
+FROM monitoring_views.anomaly_baseline_history
+GROUP BY confidence,baseline_strategy,dataset_name,layer,severity,status,
+         (observed_at_utc AT TIME ZONE 'UTC')::date;
+
+CREATE OR REPLACE VIEW monitoring_views.baseline_fallback_summary AS
+SELECT fallback_used,baseline_strategy,dataset_name,layer,severity,status,
+       (observed_at_utc AT TIME ZONE 'UTC')::date AS observed_date_utc,
+       count(*) AS evaluation_count
+FROM monitoring_views.anomaly_baseline_history
+GROUP BY fallback_used,baseline_strategy,dataset_name,layer,severity,status,
+         (observed_at_utc AT TIME ZONE 'UTC')::date;
+
 -- Grain: alert source/severity/status. Severity says urgency and status says lifecycle.
 CREATE OR REPLACE VIEW monitoring_views.alert_summary_by_severity AS
 SELECT source_type,severity,status,count(*) AS alert_count,max(created_at_utc) AS latest_alert_at_utc

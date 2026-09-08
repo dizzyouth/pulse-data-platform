@@ -36,10 +36,18 @@ SPECS = (
     ("delivery_status_by_provider", "Delivery status by provider", "bar",
      {"graph.dimensions": ["provider", "delivery_status"], "graph.metrics": ["delivery_attempts"]}),
     ("escalated_active_alerts", "Escalated active alerts (latest 100)", "table", {}),
+    ("anomalies_by_baseline_strategy", "Anomalies by baseline strategy", "bar",
+     {"graph.dimensions": ["baseline_strategy"], "graph.metrics": ["anomaly_count"]}),
+    ("baseline_confidence_distribution", "Baseline confidence distribution", "bar",
+     {"graph.dimensions": ["confidence"], "graph.metrics": ["evaluation_count"]}),
+    ("baseline_fallback_usage", "Baseline fallback usage", "bar",
+     {"graph.dimensions": ["fallback_used"], "graph.metrics": ["evaluation_count"]}),
+    ("recent_contextual_anomalies", "Recent contextual anomalies (latest 100)", "table", {}),
 )
 FILTERS = {"layer": "Layer", "dataset": "Dataset", "status": "Run status",
            "lifecycle_status": "Lifecycle status",
            "severity": "Severity", "delivery_status": "Delivery status", "provider": "Provider",
+           "baseline_strategy": "Baseline strategy", "confidence": "Baseline confidence",
            "start_date": "Start date (UTC)", "end_date": "End date (UTC)"}
 
 

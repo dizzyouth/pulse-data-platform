@@ -14,12 +14,29 @@ from src.quality.observability import emit_event
 
 
 def policy_for(metric_name: str, minimum_history: int) -> AnomalyPolicy:
+    window = max(56, minimum_history)
+    context = {"minimum_trend_history": minimum_history,
+               "minimum_seasonal_trend_history": max(28, minimum_history),
+               "maximum_training_window": window}
     if metric_name in ("warning_check_count", "failed_check_count"):
-        return AnomalyPolicy(minimum_history=minimum_history, warning_absolute=1, critical_absolute=3)
+        return AnomalyPolicy(minimum_history=minimum_history, warning_absolute=1, critical_absolute=3,
+                             maximum_training_window=window)
     if metric_name.endswith("_rate"):
         return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.25, critical_ratio=.5,
-                             warning_absolute=.1, critical_absolute=.25)
-    return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9)
+                             warning_absolute=.1, critical_absolute=.25,
+                             minimum_absolute_deviation=.02, minimum_sample_size=100,
+                             maximum_training_window=window)
+    if metric_name == "gross_revenue":
+        return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9,
+                             baseline_strategies=("seasonal_trend", "day_of_week", "trend",
+                                                  "robust_history"),
+                             minimum_absolute_deviation=100, **context)
+    if metric_name == "completed_order_volume":
+        return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9,
+                             baseline_strategies=("day_of_week", "trend", "robust_history"),
+                             minimum_absolute_deviation=5, **context)
+    return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9,
+                         maximum_training_window=window)
 
 
 def evaluate_all(series, context, minimum_history: int):

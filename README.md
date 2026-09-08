@@ -1441,9 +1441,108 @@ URLs or credentials. No secret is printed or stored by the log provider.
 Phase 5.7 intentionally has no external provider, PagerDuty/Opsgenie/SMS,
 on-call rotations, distributed queue, automatic remediation, RBAC/SSO, secret
 manager, or incident case system. A crash after a PENDING claim requires operator
-inspection; stale-claim recovery and an optional real webhook with downstream
-idempotency support are appropriate Phase 5.8 work, along with richer routing and
-multi-level escalation.
+inspection. Stale-claim recovery, an optional real webhook with downstream
+idempotency support, richer routing, and multi-level escalation remain deferred
+to a future alert-operations phase.
+
+## Phase 5.8: Contextual anomaly baselines
+
+Phase 5.8 improves expected-value modeling without changing anomaly status,
+severity, alert identity, lifecycle, delivery, escalation, or pipeline blocking.
+`src/quality/baselines.py` defines the provider-neutral `BaselineStrategy`
+contract. `evaluate` walks the metric's ordered strategy policy and selects the
+first strategy with enough prior-only history. Every contextual result records
+the requested and selected strategy, attempted fallback path, expected value,
+WARNING bounds, current residual, trend slope, seasonal reference count,
+training-window size, training error, fallback flag, and operational confidence.
+
+| Strategy | Deterministic expected value |
+| --- | --- |
+| `robust_history` | Median of the bounded history window; the Phase 5.5 MAD / modified-z, percentage, and zero-baseline absolute fallbacks remain unchanged |
+| `day_of_week` | Median of prior observations matching the current UTC weekday |
+| `trend` | Robust Theil-Sen-style median pairwise slope plus a median intercept, forecast to the current timestamp |
+| `seasonal_trend` | Robust trend plus the median detrended level from matching prior UTC weekdays |
+
+Trend slope is value units per day when source timestamps are available. All
+strategies use at most the latest 56 observations by default. The weekday model
+needs four matching weekdays; trend needs at least the configured general
+minimum (seven by default); combined seasonal/trend needs at least 28 total
+observations and four matching weekdays. Missing requirements cause an explicit
+fallback, never interpolation or silent model substitution. If no configured
+strategy qualifies, the result is `INSUFFICIENT_HISTORY`.
+
+Metric policies are explicit in `src/quality/anomaly_runner.py`:
+
+- `gross_revenue`: `seasonal_trend -> day_of_week -> trend -> robust_history`;
+- `completed_order_volume`: `day_of_week -> trend -> robust_history`;
+- `row_count`, `warning_check_count`, and `failed_check_count`: robust history;
+- funnel conversion rates: robust history plus a current denominator of at least
+  100 (`product_views`, `cart_adds`, `checkouts_started`, or `orders_created`, as
+  appropriate). Historical rate points below that denominator are excluded from
+  training; a missing or smaller current denominator yields `INSUFFICIENT_HISTORY`.
+
+These choices reflect the present sources: daily commerce totals have credible
+weekly/trend context, while quality executions are irregular and country rate
+series are comparatively sparse. They can be revised as explicit policy rather
+than by modifying a baseline implementation.
+
+### Decisions, guardrails, and confidence
+
+An observation at or beyond its inclusive WARNING bound is anomalous. Bounds use
+robust residual MAD when it is nonzero, then preserve the established percentage
+or absolute fallback for flat histories. The order-volume minimum absolute
+deviation is 5 orders, revenue is 100 currency units, and rates are 0.02. Median
+levels, median pairwise slopes, a bounded window, minimum history, rate
+denominators, and flat-variance fallbacks limit the influence of one outlier and
+avoid hypersensitive zero-width forecasts. The existing WARNING/CRITICAL score
+thresholds remain available and severity stays nonblocking by default.
+
+`LOW`, `MEDIUM`, and `HIGH` are operational reliability labels, not statistical
+coverage claims. Confidence is derived deterministically from training/reference
+count and median absolute residual relative to expected magnitude. A selected
+fallback cannot be labeled HIGH. Exact inputs and the label remain visible in
+the result details.
+
+The PostgreSQL write schema is unchanged. Contextual metadata uses the existing
+`monitoring.anomaly_results.details` JSONB column, while `baseline_value` remains
+the selected expected value for backward compatibility. New typed, read-only
+views are `anomaly_baseline_history`, `anomalies_by_strategy`,
+`anomaly_confidence_summary`, and `baseline_fallback_summary`.
+
+### Explain and backtest locally
+
+The explain command reads current warehouse series but does not require Airflow
+and does not persist:
+
+```powershell
+python -m src.quality.anomaly_cli explain gross_revenue --dimension currency=USD
+python -m src.quality.anomaly_cli explain completed_order_volume
+```
+
+It prints the selected strategy, history and seasonal counts, expected value,
+bounds, confidence, observed value, decision, residual, and explanation.
+`src/quality/anomaly_backtest.py` provides `backtest_series`: each timestamp T is
+evaluated using only observations strictly before T. Its report contains
+evaluation, anomaly, and insufficient-history counts, alert rate, and an optional
+false-positive proxy when deterministic truth labels are supplied. Test fixtures
+cover stable, growing trend, weekly, weekly-plus-trend, sudden drop, sudden spike,
+persistent level shift, and noisy healthy histories, including a direct
+no-future-leakage assertion.
+
+Pulse Platform Health retains all 20 Phase 5.7 cards and adds a final two-by-two
+model-quality section: Anomalies by baseline strategy, Baseline confidence
+distribution, Baseline fallback usage, and Recent contextual anomalies. Baseline
+strategy and Confidence filters map only to compatible cards; Layer, Dataset,
+Severity, and inclusive UTC dates retain their compatible mappings.
+
+Phase 5.8 deliberately adds no Prophet, ARIMA, neural network, external service,
+LLM scoring, automated root-cause analysis/remediation, holiday calendar, feature
+store, or future-data training. Persistent level shifts remain visible as repeated
+walk-forward anomalies but do not silently rewrite history. Explicit change-point
+signals, holiday/business-calendar effects, automatic regime adaptation,
+multivariate context, and calibrated statistical intervals are deferred to Phase
+5.9. Forecasts are lightweight operational heuristics, not financial forecasts or
+probabilistic guarantees.
 
 ## Airflow orchestration
 

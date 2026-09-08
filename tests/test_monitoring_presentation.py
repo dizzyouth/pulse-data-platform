@@ -42,7 +42,7 @@ class DashboardContractsTests(unittest.TestCase):
             self.assertEqual(health.call_args.args[2], 123)
 
     def test_queries_are_select_only_and_filters_match_semantics(self):
-        self.assertEqual(len(dashboard.SPECS), 20)
+        self.assertEqual(len(dashboard.SPECS), 24)
         for filename, _, _, _ in dashboard.SPECS:
             query = dashboard.question_query(filename, 123)["native"]
             self.assertTrue(query["query"].startswith("SELECT "))
@@ -69,9 +69,16 @@ class DashboardContractsTests(unittest.TestCase):
             elif filename == "escalated_active_alerts":
                 self.assertEqual(tags, {"layer", "dataset", "severity", "lifecycle_status",
                                         "provider", "start_date", "end_date"})
+            elif filename in ("anomalies_by_baseline_strategy", "baseline_fallback_usage"):
+                self.assertEqual(tags, {"baseline_strategy", "layer", "dataset", "severity",
+                                        "start_date", "end_date"})
+            elif filename in ("baseline_confidence_distribution", "recent_contextual_anomalies"):
+                self.assertEqual(tags, {"baseline_strategy", "confidence", "layer", "dataset",
+                                        "severity", "start_date", "end_date"})
             else:
                 self.assertEqual(tags, set(dashboard.FILTERS) - {
-                    "severity", "lifecycle_status", "delivery_status", "provider"
+                    "severity", "lifecycle_status", "delivery_status", "provider",
+                    "baseline_strategy", "confidence"
                 })
 
     def test_provisioning_is_idempotent_preserves_unrelated_cards_and_maps_valid_tags(self):
@@ -104,7 +111,7 @@ class DashboardContractsTests(unittest.TestCase):
         self.assertEqual(dashboard.ensure_dashboard(api, _unique, 123), identity)
         self.assertEqual(set(objects), original_ids)
         self.assertEqual(objects[identity]["name"], "Pulse Platform Health")
-        self.assertEqual(len(objects[identity]["dashcards"]), 21)
+        self.assertEqual(len(objects[identity]["dashcards"]), 25)
         self.assertIn("custom", {p["id"] for p in objects[identity]["parameters"]})
         for card in objects[identity]["dashcards"][:-1]:
             tags = objects[card["card_id"]]["dataset_query"]["native"]["template-tags"]
@@ -228,6 +235,7 @@ class PresentationPostgresTests(unittest.TestCase):
                 values = {"layer": "silver", "dataset": "silver_valid", "status": "PASS",
                           "severity": "WARNING", "lifecycle_status": "OPEN",
                           "delivery_status": "SENT", "provider": "log",
+                          "baseline_strategy": "robust_history", "confidence": "LOW",
                           "start_date": "2026-01-01", "end_date": "2026-01-01"}
                 filtered = re.sub(r"\{\{(\w+)\}\}", lambda m: f"%({m[1]})s", filtered)
                 self.fetch(filtered, values)
