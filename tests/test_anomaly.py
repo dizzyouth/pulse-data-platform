@@ -100,7 +100,7 @@ class AnomalyDagTests(unittest.TestCase):
     def test_single_nonblocking_task_sits_between_warehouse_quality_and_dbt(self):
         source = Path("airflow/dags/pulse_analytics_pipeline.py").read_text(encoding="utf-8")
         self.assertEqual(source.count('task_id="anomaly_check"'), 1)
-        self.assertIn("quality_check_warehouse\n        >> anomaly_check\n        >> run_dbt", source)
+        self.assertIn("quality_check_marketing_warehouse\n        >> anomaly_check\n        >> run_dbt", source)
         command = next(line for line in source.splitlines() if "anomaly_runner" in line)
         self.assertIn("--persist", command)
         self.assertNotIn("--block-on-critical", command)

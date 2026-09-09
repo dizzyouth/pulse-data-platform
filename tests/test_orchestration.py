@@ -130,7 +130,9 @@ class AirflowDagContractTests(unittest.TestCase):
         self.assertEqual(TASK_IDS, (
             "check_bronze_available", "build_silver", "quality_check_silver",
             "build_gold", "quality_check_gold", "load_gold_to_warehouse",
-            "quality_check_warehouse", "anomaly_check", "run_dbt", "test_dbt",
+            "quality_check_warehouse", "build_marketing", "quality_check_marketing_silver",
+            "quality_check_marketing_gold", "load_marketing_to_warehouse",
+            "quality_check_marketing_warehouse", "anomaly_check", "run_dbt", "test_dbt",
         ))
         for target in ("silver", "gold", "warehouse"):
             task = module.dag.task_dict[f"quality_check_{target}"]

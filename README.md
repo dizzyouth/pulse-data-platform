@@ -1851,6 +1851,170 @@ accounting-grade returns allocation,
 customer PII, and all other real advertising/source connectors. These are Phase
 6.1-or-later concerns.
 
+## Phase 6.1: Performance Marketing data layer
+
+Phase 6.1 adds a provider-agnostic advertising domain without connecting to an
+advertising account. The implementation reuses the Phase 5.9 business/source
+registry, `SourceConfig`, `IngestionEnvelope`, `SourceAdapter`, quality engine,
+contextual anomaly evaluator, Airflow deployment, analytics warehouse, dbt
+project, and Metabase instance. It does not introduce a second connector control
+plane. All fixtures in `data/fixtures/marketing/` are small, deterministic,
+synthetic files and CI remains fully offline.
+
+The flow is:
+
+```text
+business/source registry
+  -> Meta / TikTok / Google / generic offline MarketingSourceAdapter
+  -> data/bronze/marketing_daily (full native payload + Phase 5.9 envelope)
+  -> data/silver/marketing_daily (canonical typed latest daily revision)
+  -> four Gold marketing snapshots
+  -> analytics PostgreSQL tables -> dbt presentation views
+  -> Pulse Marketing Performance dashboard
+  -> existing quality and contextual anomaly/alert framework
+```
+
+`MarketingSourceAdapter` subclasses the existing local adapter implementation.
+It owns the shared envelope, deterministic logical identity, configuration,
+health, lookback, fixture extraction, and canonical validation behavior. Provider
+classes only map native names and units. `adapter_for` remains the single adapter
+factory used by the registry CLI and source-discovery DAG. Phase 6.1 adapters
+accept only `metadata.adapter: "mock"` and make no network request.
+
+### Contracts, terminology, and canonical fields
+
+The strict v1 contracts are `meta_ads_daily_v1`, `tiktok_ads_daily_v1`,
+`google_ads_daily_v1`, and `generic_ads_daily_v1`. Each declares required and
+optional types, native ad-daily grain, report-date field, source update timestamp,
+reporting-timezone field, currency field, and additive/non-additive or
+platform-attributed metric semantics. Unknown fields fail closed; intentional
+provider extensions belong in the optional `details` object or a new contract
+version.
+
+| Provider term | Canonical term |
+| --- | --- |
+| Meta campaign / ad set / ad | campaign / ad group / ad |
+| TikTok campaign / ad group / ad | campaign / ad group / ad |
+| Google campaign / ad group / ad | campaign / ad group / ad |
+| Generic campaign / ad group / ad | campaign / ad group / ad |
+
+Silver records contain business, source, ingestion and schema identity;
+`platform`; account, campaign, ad-group, ad and optional creative IDs/names;
+`report_date`, `reporting_timezone`, and `currency`; spend, impressions, optional
+reach/frequency, clicks/link clicks, explicitly named `platform_conversions` and
+`platform_conversion_value`, optional video/landing-page views; and serialized
+provider details. Providers are not forced to fabricate unsupported metrics.
+
+The supported canonical grains are:
+
+| Grain | Required logical key |
+| --- | --- |
+| Campaign daily | business, source identity, platform, account, campaign, report date |
+| Ad-group daily | campaign-daily key + `ad_group_id` |
+| Ad daily | ad-group-daily key + `ad_id` |
+
+Reporting timezone, currency, source/schema context, and source identity are also
+retained in storage/serving grains. Names and `creative_id` are attributes, not
+entity keys. Reused IDs such as campaign `123`, ad group `group_shared`, and ad
+`ad_shared` in the two fixture businesses and several platforms therefore never
+collide.
+
+### Metrics, attribution, currency, and dates
+
+Spend, impressions, clicks, platform conversions, and platform conversion value
+are the primary additive metrics. Link clicks, video views, and landing-page views
+are additive only when supplied with compatible provider semantics. Reach and
+frequency are non-additive: Phase 6.1 retains provider ad-level values in Silver
+but does not sum them into higher grains. Gold calculates ratios from aggregate
+numerators and denominators, never by averaging row ratios:
+
+```text
+CTR           = clicks / impressions
+CPC           = spend / clicks
+CPM           = spend / impressions * 1000
+CPA           = spend / platform_conversions
+platform_roas = platform_conversion_value / spend
+```
+
+A zero denominator produces SQL/Python null, never infinity, NaN, or a fabricated
+zero. `platform_conversions`, `platform_conversion_value`, and
+`platform_roas` are platform-reported attribution outputs. They are not true
+orders, delivered orders, actual revenue, margin, profit, or accounting ROAS.
+Marketing performance stays separate from commerce economics until a later phase
+defines an explicit attribution/join model.
+
+Currency is mandatory and remains in every monetary grain. No FX conversion is
+performed, and no model or dashboard query sums different currencies into one
+number. `report_date` remains the provider account date in its IANA
+`reporting_timezone`; it is not shifted to UTC or silently remapped to a business
+date. Extraction and update lineage timestamps remain UTC.
+
+### Late attribution and idempotency
+
+Daily advertising facts are mutable. `record_id` is UUIDv5 over business, source
+type/ID, schema version, platform, account, campaign, ad group, ad, and report
+date; it deliberately excludes extraction/update timestamps and metric values.
+Re-extracting an unchanged row or a revised attribution value therefore addresses
+the same logical record. Silver keeps the greatest `source_updated_at_utc` (then
+extraction timestamp), so a correction updates one daily grain rather than
+duplicating it. The Meta fixture revises the prior day's conversions from 2 to 3
+and proves that behavior.
+
+`metadata.lookback_days` defaults to 3. A future real connector will query from
+`watermark_report_date - lookback_days` inclusively and advance its report-date
+watermark only after the complete Bronze/Silver/quality transaction succeeds.
+The inclusive overlap intentionally permits idempotent redelivery and delayed
+attribution corrections. Phase 6.1 demonstrates the calculation but does not add
+an API checkpoint or claim historical platform data is immutable.
+
+### Gold, warehouse, dbt, quality, and anomaly outputs
+
+Gold and `analytics` contain `marketing_daily`, `campaign_performance`,
+`ad_group_performance`, and `ad_performance`. All preserve business, source,
+platform, timezone, and currency context. The transactional loader validates
+exact schemas, nonnegative metrics, currencies, and composite uniqueness before
+replacing existing rows. dbt exposes `marketing_overview`,
+`campaign_performance`, `ad_group_performance`, and `ad_performance`; source and
+mart tests enforce business/platform/currency completeness, composite grains,
+nonnegative raw metrics, and bounded CTR.
+
+Marketing rules run through the existing Spark quality engine and classify
+missing identity/platform/currency, invalid currency, negative metrics,
+duplicates, clicks above impressions, and invalid CTR with existing
+INFO/WARNING/CRITICAL semantics. `analytics.marketing_daily` also feeds daily
+spend, impressions, clicks, platform conversions, CTR, and CPA into the existing
+contextual baseline engine with business/source/platform/account/currency/timezone
+dimensions. Short series continue to return `INSUFFICIENT_HISTORY`.
+
+The separate **Pulse Marketing Performance** Metabase dashboard contains Spend
+by platform, Spend trend, Campaign performance, CTR/CPC/CPM,
+Platform-reported conversions/CPA, Platform-reported ROAS, Top campaigns, and Top
+ads. Its Business, Platform, Campaign, Currency, and Date filters are mapped only
+to compatible cards. The existing marketplace and platform-health dashboards are
+preserved.
+
+### Offline commands and limitations
+
+```powershell
+python -m src.onboarding.cli validate-all
+python -m src.onboarding.cli source-check marketing_demo_a meta_primary
+python -m src.onboarding.cli extract marketing_demo_a meta_primary --limit 2 --dry-run
+python -m src.marketing.pipeline demo
+python -m src.marketing.pipeline build
+python -m src.quality.runner marketing_silver --block-on-critical
+python -m src.quality.runner marketing_gold --block-on-critical
+python -m src.warehouse.load_marketing load
+dbt run --project-dir dbt --profiles-dir dbt
+dbt test --project-dir dbt --profiles-dir dbt
+```
+
+The persistent marketing build is a full deterministic offline snapshot; source-level
+CLI extraction is intentionally dry-run only. Real Meta/TikTok/Google APIs,
+OAuth and credentials, webhooks, production checkpoints, FX, cross-channel or
+commerce attribution, marketing-mix modeling, incrementality, automatic budget
+optimization, creative AI, profit recommendations, and COD operations are
+deferred beyond Phase 6.1.
+
 ## Airflow orchestration
 
 Apache Airflow 2.11.2 runs entirely in Docker; no native Windows Airflow
@@ -1871,6 +2035,11 @@ check_bronze_available
   -> quality_check_gold
   -> load_gold_to_warehouse
   -> quality_check_warehouse
+  -> build_marketing
+  -> quality_check_marketing_silver
+  -> quality_check_marketing_gold
+  -> load_marketing_to_warehouse
+  -> quality_check_marketing_warehouse
   -> anomaly_check
   -> run_dbt
   -> test_dbt

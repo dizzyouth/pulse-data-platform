@@ -1,0 +1,18 @@
+[
+  {
+    "report_date": "2026-01-03", "platform": "affiliate_network", "account_id": "account_shared",
+    "campaign_id": "123", "campaign_name": "Publisher Test", "ad_group_id": "group_shared",
+    "ad_group_name": "Publishers", "ad_id": "ad_shared", "ad_name": "Placement A",
+    "reporting_timezone": "UTC", "currency": "EUR", "spend": 10.0, "impressions": 500,
+    "clicks": 25, "link_clicks": 25, "conversions": 1, "conversion_value": 40.0,
+    "updated_at_utc": "2026-01-04T10:00:00Z", "details": {"import_method": "manual_fixture"}
+  },
+  {
+    "report_date": "2026-01-04", "platform": "affiliate_network", "account_id": "account_shared",
+    "campaign_id": "generic_2", "campaign_name": "Publisher Test", "ad_group_id": "group_2",
+    "ad_group_name": "Publishers", "ad_id": "ad_2", "ad_name": "Placement B",
+    "reporting_timezone": "UTC", "currency": "EUR", "spend": 0.0, "impressions": 0,
+    "clicks": 0, "link_clicks": 0, "conversions": 0, "conversion_value": 0.0,
+    "updated_at_utc": "2026-01-05T10:00:00Z", "details": {"import_method": "manual_fixture"}
+  }
+]

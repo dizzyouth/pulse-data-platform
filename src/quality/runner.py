@@ -72,7 +72,7 @@ def run_quality_checks(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Read-only quality assessment of Pulse Parquet or warehouse snapshots")
-    parser.add_argument("dataset", choices=("silver", "gold", "warehouse", "silver_valid", "daily_sales", "customer_metrics", "product_metrics", "funnel_metrics"))
+    parser.add_argument("dataset", choices=("silver", "gold", "warehouse", "silver_valid", "daily_sales", "customer_metrics", "product_metrics", "funnel_metrics", "marketing", "marketing_silver", "marketing_gold", "marketing_warehouse", "marketing_daily", "campaign_performance", "ad_group_performance", "ad_performance"))
     parser.add_argument("--path", type=Path, help="override the configured local Parquet directory")
     parser.add_argument("--max-age-hours", type=float, help="optional Silver freshness warning threshold")
     parser.add_argument("--reference-count", type=int, help="explicit comparable previous snapshot count")
@@ -104,7 +104,7 @@ def iter_target_results(spark, target: str, *, path: Path | None = None,
             ))
         return results
 
-    if target in ("gold", "warehouse") and (path is not None or extra_rules or reference_count is not None):
+    if target in ("gold", "warehouse", "marketing", "marketing_gold", "marketing_warehouse") and (path is not None or extra_rules or reference_count is not None):
         raise ValueError("Path and optional thresholds require a single dataset")
     if target == "warehouse":
         from src.quality.warehouse import warehouse_frames
@@ -112,6 +112,37 @@ def iter_target_results(spark, target: str, *, path: Path | None = None,
             for name, frame in frames.items():
                 yield from assess(frame, gold_rules(name, layer="analytics"),
                                               QualityContext(dataset_name=name, layer="analytics"))
+        return
+    if target == "marketing_warehouse":
+        from src.quality.datasets import marketing_gold_rules
+        from src.quality.warehouse import marketing_warehouse_frames
+        with marketing_warehouse_frames(spark) as frames:
+            for name, frame in frames.items():
+                yield from assess(frame, marketing_gold_rules(name, layer="analytics"),
+                                  QualityContext(dataset_name=name, layer="analytics"))
+        return
+    if target in ("marketing", "marketing_gold"):
+        from src.marketing.pipeline import MARKETING_GOLD_TABLES, load_marketing_paths
+        from src.quality.datasets import marketing_gold_rules
+        selected_paths = load_marketing_paths()
+        for name in MARKETING_GOLD_TABLES:
+            yield from assess(read_parquet_data_files(spark, getattr(selected_paths, name)),
+                              marketing_gold_rules(name), QualityContext(dataset_name=name, layer="gold"))
+        return
+    if target == "marketing_silver":
+        from src.marketing.pipeline import load_marketing_paths
+        from src.quality.datasets import marketing_silver_rules
+        yield from assess(read_parquet_data_files(spark, path or load_marketing_paths().silver),
+                          (*marketing_silver_rules(), *extra_rules),
+                          QualityContext(dataset_name="marketing_silver", layer="silver",
+                                         reference_count=reference_count))
+        return
+    if target in ("marketing_daily", "campaign_performance", "ad_group_performance", "ad_performance"):
+        from src.marketing.pipeline import load_marketing_paths
+        from src.quality.datasets import marketing_gold_rules
+        yield from assess(read_parquet_data_files(spark, path or getattr(load_marketing_paths(), target)),
+                          (*marketing_gold_rules(target), *extra_rules),
+                          QualityContext(dataset_name=target, layer="gold", reference_count=reference_count))
         return
     names = tuple(GOLD_GRAINS) if target == "gold" else ("silver_valid" if target == "silver" else target,)
     for name in names:
@@ -131,7 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--attempt-number requires --execution-id")
     if args.max_volume_change is not None and args.reference_count is None:
         parser.error("--max-volume-change requires --reference-count")
-    if args.dataset in ("gold", "warehouse") and any(value is not None for value in
+    if args.dataset in ("gold", "warehouse", "marketing", "marketing_gold", "marketing_warehouse") and any(value is not None for value in
             (args.path, args.max_age_hours, args.reference_count, args.max_volume_change)):
         parser.error("path and optional thresholds require a single dataset")
     from src.analytics.gold_build import build_gold_spark_session

@@ -84,6 +84,43 @@ with DAG(
         env=QUALITY_EXECUTION_ENV,
         append_env=True,
     )
+    build_marketing = BashOperator(
+        task_id="build_marketing",
+        bash_command="python -m src.marketing.pipeline build",
+        cwd=PROJECT_ROOT,
+    )
+    quality_check_marketing_silver = BashOperator(
+        task_id="quality_check_marketing_silver",
+        bash_command="python -m src.quality.runner marketing_silver --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT,
+        trigger_rule="all_success",
+        do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV,
+        append_env=True,
+    )
+    quality_check_marketing_gold = BashOperator(
+        task_id="quality_check_marketing_gold",
+        bash_command="python -m src.quality.runner marketing_gold --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT,
+        trigger_rule="all_success",
+        do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV,
+        append_env=True,
+    )
+    load_marketing_to_warehouse = BashOperator(
+        task_id="load_marketing_to_warehouse",
+        bash_command="python -m src.warehouse.load_marketing load",
+        cwd=PROJECT_ROOT,
+    )
+    quality_check_marketing_warehouse = BashOperator(
+        task_id="quality_check_marketing_warehouse",
+        bash_command="python -m src.quality.runner marketing_warehouse --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT,
+        trigger_rule="all_success",
+        do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV,
+        append_env=True,
+    )
     anomaly_check = BashOperator(
         task_id="anomaly_check",
         bash_command="python -m src.quality.anomaly_runner --persist --log-format jsonl",
@@ -112,6 +149,11 @@ with DAG(
         >> quality_check_gold
         >> load_gold_to_warehouse
         >> quality_check_warehouse
+        >> build_marketing
+        >> quality_check_marketing_silver
+        >> quality_check_marketing_gold
+        >> load_marketing_to_warehouse
+        >> quality_check_marketing_warehouse
         >> anomaly_check
         >> run_dbt
         >> test_dbt

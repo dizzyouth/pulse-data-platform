@@ -27,6 +27,10 @@ htmlcov/
 # Generated local data
 data/*
 !data/.gitkeep
+!data/fixtures/
+data/fixtures/*
+!data/fixtures/marketing/
+!data/fixtures/marketing/*.json
 
 # Logs
 logs/

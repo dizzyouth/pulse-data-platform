@@ -1,0 +1,11 @@
+{
+  "business_id": "marketing_demo_b",
+  "business_name": "Synthetic Marketing Business B",
+  "status": "ACTIVE",
+  "timezone": "Europe/London",
+  "currency": "GBP",
+  "country": "GB",
+  "enabled_sources": ["meta_primary", "google_primary", "generic_manual"],
+  "reporting_timezone": "Europe/London",
+  "metadata": {"synthetic": true, "purpose": "Phase 6.1 offline multi-platform fixture"}
+}

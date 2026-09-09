@@ -10,6 +10,6 @@
     "order_id": "ord_shared",
     "customer_id": "cus_shared",
     "product_id": "prd_shared",
-    "campaign_id": "cmp_shared"
+    "campaign_id": "123"
   }
 }

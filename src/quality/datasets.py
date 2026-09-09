@@ -3,7 +3,7 @@
 from src.streaming.silver_streaming import SUPPORTED_EVENT_TYPES
 from src.warehouse.load_gold import TABLE_SPECS
 from src.quality.models import (
-    AllowedValues, NullRatio, NumericBounds, Pattern, RowCount, Rule, Severity, Uniqueness,
+    AllowedValues, LessThanOrEqual, NullRatio, NumericBounds, Pattern, RowCount, Rule, Severity, Uniqueness,
 )
 
 
@@ -61,4 +61,49 @@ def gold_rules(dataset_name: str, *, layer: str = "gold") -> tuple[Rule, ...]:
     for name in spec.rate_columns:
         rules.append(NumericBounds(check_name=f"{name}_range", column=name,
                                    minimum=0, maximum=1, allow_null=True))
+    return tuple(rules)
+
+
+def marketing_silver_rules() -> tuple[Rule, ...]:
+    identity = ("business_id", "source_type", "source_id", "schema_version", "platform",
+                "account_id", "campaign_id", "ad_group_id", "ad_id", "report_date")
+    return (
+        RowCount(check_name="row_count", min_rows=1, severity=Severity.WARNING),
+        Uniqueness(check_name="daily_grain_unique", columns=identity),
+        *(NullRatio(check_name=f"{name}_complete", column=name) for name in
+          ("business_id", "source_type", "source_id", "schema_version", "platform", "account_id",
+           "campaign_id", "report_date", "reporting_timezone", "currency")),
+        *(Pattern(check_name=f"{name}_nonblank", column=name, pattern=r"\S") for name in
+          ("business_id", "source_type", "source_id", "schema_version", "platform", "account_id", "campaign_id")),
+        Pattern(check_name="currency_valid", column="currency", pattern="^[A-Z]{3}$"),
+        *(NumericBounds(check_name=f"{name}_nonnegative", column=name, minimum=0, allow_null=False)
+          for name in ("spend", "impressions", "clicks", "platform_conversions", "platform_conversion_value")),
+        LessThanOrEqual(check_name="clicks_not_above_impressions", left_column="clicks",
+                        right_column="impressions", allow_null=False, severity=Severity.WARNING),
+    )
+
+
+def marketing_gold_rules(dataset_name: str, *, layer: str = "gold") -> tuple[Rule, ...]:
+    from src.warehouse.load_marketing import MARKETING_GRAINS, MARKETING_TABLE_SPECS
+
+    if dataset_name not in MARKETING_GRAINS or layer not in ("gold", "analytics"):
+        raise ValueError("Expected a known marketing Gold dataset and gold/analytics layer")
+    spec = next(item for item in MARKETING_TABLE_SPECS if item.name == dataset_name)
+    nullable = {column.name for column in spec.columns if column.nullable}
+    rules: list[Rule] = [
+        RowCount(check_name="row_count", min_rows=1),
+        Uniqueness(check_name="grain_unique", columns=MARKETING_GRAINS[dataset_name]),
+        Pattern(check_name="currency_valid", column="currency", pattern="^[A-Z]{3}$"),
+    ]
+    for column in spec.columns:
+        if not column.nullable:
+            rules.append(NullRatio(check_name=f"{column.name}_complete", column=column.name))
+    for name in spec.nonnegative_columns:
+        rules.append(NumericBounds(check_name=f"{name}_nonnegative", column=name,
+                                   minimum=0, allow_null=name in nullable))
+    rules.extend((
+        NumericBounds(check_name="ctr_range", column="ctr", minimum=0, maximum=1, allow_null=True),
+        LessThanOrEqual(check_name="clicks_not_above_impressions", left_column="clicks",
+                        right_column="impressions", allow_null=False, severity=Severity.WARNING),
+    ))
     return tuple(rules)

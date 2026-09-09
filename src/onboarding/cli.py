@@ -68,18 +68,38 @@ def main(argv=None):
                 payload["record_count"] = len(adapter.extract()) if health.healthy else 0
             success = health.healthy
         elif args.command == "extract":
-            from src.onboarding.shopify_ingestion import run_shopify_ingestion
-
             if args.limit is not None and not args.dry_run:
                 raise ValueError("--limit is restricted to --dry-run so a timestamp tie cannot strand records")
             config = _source(registry, args.business_id, args.source_id)
-            if config.source_type != "shopify" or config.metadata.get("adapter") != "admin_api":
-                raise ValueError("extract currently supports real Shopify admin_api sources only")
-            business = registry.get_business(args.business_id)
-            report = run_shopify_ingestion(
-                config, business, limit=args.limit, dry_run=args.dry_run
-            )
-            payload, success = report.to_dict(), True
+            if config.source_type in {"meta_ads", "tiktok_ads", "google_ads", "generic_ads"}:
+                from src.marketing.pipeline import extract_registered_marketing
+
+                if args.limit is not None and not args.dry_run:
+                    raise ValueError("--limit is restricted to --dry-run")
+                if args.dry_run:
+                    extractions = extract_registered_marketing(
+                        registry, business_id=args.business_id, source_id=args.source_id
+                    )
+                    records = [record.to_dict() for _, batch in extractions for record in batch]
+                    payload = {"business_id": args.business_id, "source_id": args.source_id,
+                               "dry_run": True, "record_count": len(records),
+                               "records": records[:args.limit] if args.limit is not None else records}
+                else:
+                    raise ValueError(
+                        "Marketing source extraction is dry-run only here; use "
+                        "python -m src.marketing.pipeline build for the full deterministic snapshot"
+                    )
+                success = True
+            else:
+                from src.onboarding.shopify_ingestion import run_shopify_ingestion
+
+                if config.source_type != "shopify" or config.metadata.get("adapter") != "admin_api":
+                    raise ValueError("extract supports marketing mocks and Shopify admin_api sources")
+                business = registry.get_business(args.business_id)
+                report = run_shopify_ingestion(
+                    config, business, limit=args.limit, dry_run=args.dry_run
+                )
+                payload, success = report.to_dict(), True
         elif args.command == "source-status":
             from src.onboarding.connector_state import ConnectorStateStore
 

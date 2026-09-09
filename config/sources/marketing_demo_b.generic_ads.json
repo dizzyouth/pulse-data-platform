@@ -1,0 +1,6 @@
+{
+  "source_type": "generic_ads", "source_id": "generic_manual", "enabled": true,
+  "business_id": "marketing_demo_b", "ingestion_mode": "file", "schedule": "15 7 * * *",
+  "schema_version": "generic_ads_daily_v1", "credential_ref": "SYNTHETIC_GENERIC_ADS_FILE",
+  "metadata": {"adapter": "mock", "synthetic": true, "lookback_days": 3}
+}

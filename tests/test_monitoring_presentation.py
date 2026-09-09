@@ -26,19 +26,23 @@ from tests.test_quality_persistence import fixture_run
 class DashboardContractsTests(unittest.TestCase):
     def test_health_inventory_matches_pipeline_policies(self):
         from src.quality.datasets import GOLD_GRAINS
+        from src.warehouse.load_marketing import MARKETING_GRAINS
         source = (Path(__file__).resolve().parents[1] / "src/warehouse/monitoring_views.sql").read_text()
         inventory = set(re.findall(r"\('([^']+)', '(silver|gold|analytics)'\)", source))
-        self.assertEqual(inventory, {("silver_valid", "silver")} |
-                         {(name, layer) for name in GOLD_GRAINS for layer in ("gold", "analytics")})
+        self.assertEqual(inventory, {("silver_valid", "silver"), ("marketing_silver", "silver")} |
+                         {(name, layer) for name in GOLD_GRAINS for layer in ("gold", "analytics")} |
+                         {(name, layer) for name in MARKETING_GRAINS for layer in ("gold", "analytics")})
 
     def test_main_provisions_both_dashboards(self):
         from bi import setup_metabase as setup
         with patch.object(setup, "_request", return_value={}), patch.object(setup, "_login", return_value="session"), \
              patch.object(setup, "_ensure_warehouse", return_value=123), patch.object(setup, "_verify_marts"), \
              patch.object(setup, "_ensure_dashboard") as marketplace, \
+             patch.object(setup, "_ensure_marketing_dashboard") as marketing, \
              patch.object(dashboard, "ensure_dashboard", return_value=999) as health:
             self.assertEqual(setup.main(), 0)
             marketplace.assert_called_once_with("session", 123)
+            marketing.assert_called_once_with("session", 123)
             self.assertEqual(health.call_args.args[2], 123)
 
     def test_queries_are_select_only_and_filters_match_semantics(self):

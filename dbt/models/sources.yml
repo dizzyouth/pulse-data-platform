@@ -76,3 +76,63 @@ sources:
           - name: order_to_payment_rate
             description: "Payment-completed events divided by order-created events; null when orders are zero."
             data_tests: [between_zero_and_one]
+      - name: marketing_daily
+        description: "Provider-reported marketing facts by business, source, platform, account, reporting date, timezone, and currency. No FX conversion."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, source_type, source_id, platform, account_id, report_date, reporting_timezone, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: platform
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: spend
+            data_tests: [not_null, nonnegative]
+          - name: impressions
+            data_tests: [not_null, nonnegative]
+          - name: clicks
+            data_tests: [not_null, nonnegative]
+          - name: ctr
+            data_tests: [between_zero_and_one]
+      - name: campaign_performance
+        description: "Provider-reported additive facts and safely derived KPIs at explicit campaign-daily grain."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, source_type, source_id, platform, account_id, campaign_id, report_date, reporting_timezone, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: platform
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: spend
+            data_tests: [not_null, nonnegative]
+      - name: ad_group_performance
+        description: "Provider-neutral ad-group daily facts; Meta ad sets are mapped to ad_group_id/name."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, source_type, source_id, platform, account_id, campaign_id, ad_group_id, report_date, reporting_timezone, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: platform
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+      - name: ad_performance
+        description: "Provider-reported ad daily facts with creative identity when supplied."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, source_type, source_id, platform, account_id, campaign_id, ad_group_id, ad_id, report_date, reporting_timezone, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: platform
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: spend
+            data_tests: [not_null, nonnegative]

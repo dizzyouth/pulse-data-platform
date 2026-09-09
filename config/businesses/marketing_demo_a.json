@@ -1,0 +1,11 @@
+{
+  "business_id": "marketing_demo_a",
+  "business_name": "Synthetic Marketing Business A",
+  "status": "ACTIVE",
+  "timezone": "America/New_York",
+  "currency": "USD",
+  "country": "US",
+  "enabled_sources": ["meta_primary", "tiktok_primary"],
+  "reporting_timezone": "America/New_York",
+  "metadata": {"synthetic": true, "purpose": "Phase 6.1 offline multi-platform fixture"}
+}

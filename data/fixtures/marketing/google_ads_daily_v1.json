@@ -1,0 +1,20 @@
+[
+  {
+    "segments_date": "2026-01-03", "customer_id": "account_shared", "campaign_id": "123",
+    "campaign_name": "Search Brand", "ad_group_id": "group_shared", "ad_group_name": "Exact Brand",
+    "ad_id": "ad_shared", "ad_name": "Responsive Search", "creative_id": "asset_group_1",
+    "timezone": "Europe/London", "currency": "GBP", "cost_micros": 12000000,
+    "impressions": 600, "clicks": 90, "conversions": 4.5, "conversions_value": 180.0,
+    "video_views": 0, "updated_at_utc": "2026-01-04T07:00:00Z",
+    "details": {"network": "SEARCH", "conversion_action_scope": "account"}
+  },
+  {
+    "segments_date": "2026-01-04", "customer_id": "account_shared", "campaign_id": "google_2",
+    "campaign_name": "Video Awareness", "ad_group_id": "group_2", "ad_group_name": "Affinity",
+    "ad_id": "ad_2", "ad_name": "Video 15s", "creative_id": "asset_group_2",
+    "timezone": "Europe/London", "currency": "GBP", "cost_micros": 9000000,
+    "impressions": 3000, "clicks": 30, "conversions": 0.0, "conversions_value": 0.0,
+    "video_views": 2100, "updated_at_utc": "2026-01-05T07:00:00Z",
+    "details": {"network": "YOUTUBE"}
+  }
+]

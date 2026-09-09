@@ -1,0 +1,20 @@
+[
+  {
+    "stat_time_day": "2026-01-03", "advertiser_id": "account_shared", "campaign_id": "123",
+    "campaign_name": "Creator Prospecting", "adgroup_id": "group_shared", "adgroup_name": "Interest Stack",
+    "ad_id": "ad_shared", "ad_name": "Creator Hook", "creative_id": "creative_tiktok_1",
+    "timezone": "America/New_York", "currency": "USD", "stat_cost": 15.0, "show_cnt": 1500,
+    "reach": 1200, "click_cnt": 60, "conversion": 1, "conversion_value": 55.0,
+    "video_play_actions": 1100, "landing_page_view": 42, "updated_at_utc": "2026-01-04T09:00:00Z",
+    "details": {"optimization_goal": "COMPLETE_PAYMENT"}
+  },
+  {
+    "stat_time_day": "2026-01-04", "advertiser_id": "account_shared", "campaign_id": "tiktok_2",
+    "campaign_name": "Retargeting", "adgroup_id": "group_2", "adgroup_name": "Site Visitors",
+    "ad_id": "ad_2", "ad_name": "Demo Clip", "creative_id": "creative_tiktok_2",
+    "timezone": "America/New_York", "currency": "USD", "stat_cost": 18.0, "show_cnt": 1600,
+    "reach": 1300, "click_cnt": 64, "conversion": 2, "conversion_value": 105.0,
+    "video_play_actions": 1200, "landing_page_view": 45, "updated_at_utc": "2026-01-05T09:00:00Z",
+    "details": {"optimization_goal": "COMPLETE_PAYMENT"}
+  }
+]

@@ -25,6 +25,13 @@ x-airflow-common: &airflow-common
     GOLD_PRODUCT_METRICS_PATH: /opt/pulse/data/gold/product_metrics
     GOLD_FUNNEL_METRICS_PATH: /opt/pulse/data/gold/funnel_metrics
     GOLD_SHUFFLE_PARTITIONS: ${GOLD_SHUFFLE_PARTITIONS:-4}
+    BRONZE_MARKETING_PATH: /opt/pulse/data/bronze/marketing_daily
+    SILVER_MARKETING_PATH: /opt/pulse/data/silver/marketing_daily
+    GOLD_MARKETING_DAILY_PATH: /opt/pulse/data/gold/marketing_daily
+    GOLD_CAMPAIGN_PERFORMANCE_PATH: /opt/pulse/data/gold/campaign_performance
+    GOLD_AD_GROUP_PERFORMANCE_PATH: /opt/pulse/data/gold/ad_group_performance
+    GOLD_AD_PERFORMANCE_PATH: /opt/pulse/data/gold/ad_performance
+    MARKETING_SHUFFLE_PARTITIONS: ${MARKETING_SHUFFLE_PARTITIONS:-4}
     WAREHOUSE_DB: ${WAREHOUSE_DB:-pulse_analytics}
     WAREHOUSE_USER: ${WAREHOUSE_USER:-pulse}
     WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-pulse-local-development-only}

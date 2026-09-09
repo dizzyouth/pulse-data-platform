@@ -15,12 +15,20 @@ EXPECTED_SOURCES = {
     "customer_metrics",
     "product_metrics",
     "funnel_metrics",
+    "marketing_daily",
+    "campaign_performance",
+    "ad_group_performance",
+    "ad_performance",
 }
 EXPECTED_MARTS = {
     "revenue_by_day",
     "top_customers",
     "top_products",
     "funnel_performance",
+    "marketing_overview",
+    "campaign_performance",
+    "ad_performance",
+    "ad_group_performance",
 }
 
 

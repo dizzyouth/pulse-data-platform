@@ -1,0 +1,6 @@
+{
+  "source_type": "meta_ads", "source_id": "meta_primary", "enabled": true,
+  "business_id": "marketing_demo_a", "ingestion_mode": "batch", "schedule": "30 6 * * *",
+  "schema_version": "meta_ads_daily_v1", "credential_ref": "SYNTHETIC_META_ADS_TOKEN",
+  "metadata": {"adapter": "mock", "synthetic": true, "lookback_days": 3}
+}

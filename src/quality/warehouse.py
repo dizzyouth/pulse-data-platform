@@ -59,3 +59,33 @@ def warehouse_frames(spark):
             spec.name: spark.read.schema(warehouse_schema(spec)).option("mode", "FAILFAST").json(str(paths[spec.name]))
             for spec in TABLE_SPECS
         }
+
+
+@contextmanager
+def marketing_warehouse_frames(spark):
+    """Expose the four analytics marketing tables to the shared Spark rule engine."""
+    from src.warehouse.load_marketing import MARKETING_TABLE_SPECS
+
+    with TemporaryDirectory(prefix="pulse-quality-marketing-warehouse-") as directory:
+        paths = {}
+        with psycopg.connect(**connection_kwargs()) as connection:
+            connection.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+            connection.read_only = True
+            with connection.cursor() as cursor:
+                for spec in MARKETING_TABLE_SPECS:
+                    cursor.execute(
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
+                        (WAREHOUSE_SCHEMA, spec.name),
+                    )
+                    columns = dict(cursor.fetchall())
+                    validate_required_columns(spec.name, tuple(columns), spec)
+                    path = Path(directory, f"{spec.name}.jsonl")
+                    with connection.cursor(name=f"quality_{spec.name}") as rows, path.open("w", encoding="utf-8") as output:
+                        rows.execute(sql.SQL("SELECT row_to_json(snapshot)::text FROM {}.{} AS snapshot").format(
+                            sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(spec.name)))
+                        for (record,) in rows:
+                            output.write(record + "\n")
+                    paths[spec.name] = path
+        yield {spec.name: spark.read.schema(warehouse_schema(spec)).option("mode", "FAILFAST").json(str(paths[spec.name]))
+               for spec in MARKETING_TABLE_SPECS}

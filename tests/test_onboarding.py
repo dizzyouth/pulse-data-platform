@@ -86,11 +86,11 @@ class SampleRegistryTests(unittest.TestCase):
 
     def test_synthetic_demo_proves_all_sources_without_network(self):
         report = run_demo(registry=self.registry)
-        self.assertEqual(report.bronze_records, 6)
-        self.assertEqual(report.silver_records, 6)
+        self.assertEqual(report.bronze_records, 7)
+        self.assertEqual(report.silver_records, 7)
         self.assertEqual(report.shopify_orders, 2)
         self.assertEqual(report.shopify_revenue, 200.0)
-        self.assertEqual(report.meta_ads_spend, 55.0)
+        self.assertEqual(report.meta_ads_spend, 70.0)
         self.assertEqual(report.warehouse_rows, 4)
         self.assertEqual(report.queried_business_rows, 4)
         self.assertEqual(report.quality_status, "PASS")
@@ -98,9 +98,9 @@ class SampleRegistryTests(unittest.TestCase):
 
     def test_discovery_is_config_driven_and_stable(self):
         descriptors = discover_enabled_sources(self.registry)
-        self.assertEqual([item.source_id for item in descriptors],
-                         ["demo_csv", "demo_meta_ads", "demo_shopify"])
-        self.assertEqual(len({item.task_id for item in descriptors}), 3)
+        self.assertEqual({item.source_type for item in descriptors},
+                         {"shopify", "csv_manual", "meta_ads", "tiktok_ads", "google_ads", "generic_ads"})
+        self.assertEqual(len({item.task_id for item in descriptors}), 8)
         self.assertTrue(all(item.schema_version.endswith("_v1") for item in descriptors))
 
     def test_multi_business_orders_and_ads_fixture_uses_overlapping_ids_safely(self):
@@ -119,8 +119,10 @@ class SampleRegistryTests(unittest.TestCase):
             owners = {record.business_id for record in records
                       if identifier in record.payload.values()}
             self.assertEqual(owners, set(fixture["businesses"]))
+        # Each business has one intentional prior-day Meta attribution revision;
+        # revisions share record identity so Silver can update instead of append.
         self.assertEqual(len({(record.business_id, record.source_id, record.record_id)
-                              for record in records}), len(records))
+                              for record in records}), len(records) - 2)
 
     def test_cli_list_show_validate_and_source_check(self):
         environment = {

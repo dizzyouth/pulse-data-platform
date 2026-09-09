@@ -1,0 +1,6 @@
+{
+  "source_type": "tiktok_ads", "source_id": "tiktok_primary", "enabled": true,
+  "business_id": "marketing_demo_a", "ingestion_mode": "batch", "schedule": "45 6 * * *",
+  "schema_version": "tiktok_ads_daily_v1", "credential_ref": "SYNTHETIC_TIKTOK_ADS_TOKEN",
+  "metadata": {"adapter": "mock", "synthetic": true, "lookback_days": 3}
+}

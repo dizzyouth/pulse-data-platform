@@ -1,0 +1,29 @@
+[
+  {
+    "date_start": "2026-01-03", "account_id": "account_shared", "account_name": "Synthetic Meta Account",
+    "campaign_id": "123", "campaign_name": "Winter Prospecting", "adset_id": "group_shared",
+    "adset_name": "Broad US", "ad_id": "ad_shared", "ad_name": "Static A", "creative_id": "creative_meta_1",
+    "account_timezone": "America/New_York", "account_currency": "USD", "spend": 20.0,
+    "impressions": 1000, "reach": 800, "frequency": 1.25, "clicks": 40, "inline_link_clicks": 30,
+    "actions": 2, "action_values": 90.0, "video_views": 300, "landing_page_views": 25,
+    "updated_at_utc": "2026-01-04T08:00:00Z", "details": {"objective": "OUTCOME_SALES"}
+  },
+  {
+    "date_start": "2026-01-04", "account_id": "account_shared", "account_name": "Synthetic Meta Account",
+    "campaign_id": "123", "campaign_name": "Winter Prospecting", "adset_id": "group_shared",
+    "adset_name": "Broad US", "ad_id": "ad_shared", "ad_name": "Static A", "creative_id": "creative_meta_1",
+    "account_timezone": "America/New_York", "account_currency": "USD", "spend": 25.0,
+    "impressions": 1200, "reach": 900, "frequency": 1.333333, "clicks": 48, "inline_link_clicks": 36,
+    "actions": 2, "action_values": 100.0, "video_views": 360, "landing_page_views": 31,
+    "updated_at_utc": "2026-01-05T08:00:00Z", "details": {"attribution_window": "7d_click_1d_view"}
+  },
+  {
+    "date_start": "2026-01-04", "account_id": "account_shared", "account_name": "Synthetic Meta Account",
+    "campaign_id": "123", "campaign_name": "Winter Prospecting", "adset_id": "group_shared",
+    "adset_name": "Broad US", "ad_id": "ad_shared", "ad_name": "Static A", "creative_id": "creative_meta_1",
+    "account_timezone": "America/New_York", "account_currency": "USD", "spend": 25.0,
+    "impressions": 1200, "reach": 900, "frequency": 1.333333, "clicks": 48, "inline_link_clicks": 36,
+    "actions": 3, "action_values": 150.0, "video_views": 360, "landing_page_views": 31,
+    "updated_at_utc": "2026-01-06T08:00:00Z", "details": {"attribution_window": "7d_click_1d_view", "revision": "late_attribution"}
+  }
+]

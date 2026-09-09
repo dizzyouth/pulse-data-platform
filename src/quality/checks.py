@@ -10,7 +10,7 @@ from pyspark.sql import Column, DataFrame, functions as F
 from pyspark.sql.types import NumericType, StringType, TimestampType
 
 from src.quality.models import (
-    AllowedValues, CheckDetails, Freshness, NullRatio, NumericBounds, Pattern,
+    AllowedValues, CheckDetails, Freshness, LessThanOrEqual, NullRatio, NumericBounds, Pattern,
     QualityContext, QualityResult, RowCount, Rule, Severity, Status, Uniqueness,
     VolumeChange,
 )
@@ -43,6 +43,9 @@ def validate_rule(rule: Rule) -> None:
             not isinstance(rule.columns, tuple) or not rule.columns or len(set(rule.columns)) != len(rule.columns)
         ):
             raise ValueError("uniqueness needs distinct key columns in a nonempty tuple")
+    elif isinstance(rule, LessThanOrEqual):
+        if not rule.left_column.strip() or not rule.right_column.strip() or rule.left_column == rule.right_column:
+            raise ValueError("comparison requires two distinct column names")
     elif isinstance(rule, AllowedValues):
         if not isinstance(rule.values, tuple) or not rule.values or any(
             not isinstance(v, (str, int, float)) or (isinstance(v, float) and not math.isfinite(v))
@@ -80,6 +83,14 @@ def required_columns(rule: Rule) -> tuple[str, ...]:
 
 
 def schema_problem(frame: DataFrame, rule: Rule) -> str | None:
+    if isinstance(rule, LessThanOrEqual):
+        missing = [name for name in (rule.left_column, rule.right_column) if name not in frame.columns]
+        if missing:
+            return "Missing columns: " + ", ".join(missing)
+        if any(not isinstance(frame.schema[name].dataType, NumericType)
+               for name in (rule.left_column, rule.right_column)):
+            return "comparison columns require NumericType; no implicit quality cast"
+        return None
     missing = set(required_columns(rule)).difference(frame.columns)
     if missing:
         return f"Missing columns: {', '.join(sorted(missing))}"
@@ -96,6 +107,11 @@ def schema_problem(frame: DataFrame, rule: Rule) -> str | None:
 def aggregate_expression(rule: Rule) -> Column | None:
     if isinstance(rule, (RowCount, VolumeChange, Uniqueness)):
         return None
+    if isinstance(rule, LessThanOrEqual):
+        left, right = column(rule.left_column), column(rule.right_column)
+        invalid = left > right
+        invalid = F.when(left.isNull() | right.isNull(), F.lit(not rule.allow_null)).otherwise(invalid)
+        return F.count(F.when(invalid, 1))
     value = column(rule.column)
     if isinstance(rule, Freshness):
         # Epoch seconds preserve UTC independently of the Python/Spark session timezone.
@@ -173,6 +189,7 @@ def evaluate_metric(rule: Rule, context: QualityContext, rows: int, metric: int 
     expectation = (
         f"allowed={rule.values}; allow_null={rule.allow_null}" if isinstance(rule, AllowedValues) else
         f"pattern={rule.pattern}; allow_null={rule.allow_null}" if isinstance(rule, Pattern) else
+        f"{rule.left_column}<={rule.right_column}; allow_null={rule.allow_null}" if isinstance(rule, LessThanOrEqual) else
         f"minimum={rule.minimum}; inclusive={rule.minimum_inclusive}; maximum={rule.maximum}; allow_null={rule.allow_null}"
     )
     return result(rule, context, metric="invalid_count", observed=metric, expected=expectation,

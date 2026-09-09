@@ -71,4 +71,28 @@ def load_metric_series():
                     rows.append(("funnel_metrics", "analytics", metric,
                                  {"business_id": business_id, "country": country},
                                  datetime.combine(day, time.min, timezone.utc), value, day, sample_size))
+        marketing_exists = connection.execute(
+            "SELECT to_regclass('analytics.marketing_daily') IS NOT NULL"
+        ).fetchone()[0]
+        if marketing_exists:
+            marketing = connection.execute("""SELECT business_id,source_type,source_id,platform,account_id,
+              report_date,reporting_timezone,currency,spend,impressions,clicks,platform_conversions,ctr,cpa
+              FROM analytics.marketing_daily
+              ORDER BY business_id,source_type,source_id,platform,account_id,report_date,currency""").fetchall()
+            for (business_id, source_type, source_id, platform, account_id, day,
+                 reporting_timezone, currency, spend, impressions, clicks,
+                 conversions, ctr, cpa) in marketing:
+                dimensions = {"business_id": business_id, "source_type": source_type,
+                              "source_id": source_id, "platform": platform,
+                              "account_id": account_id, "currency": currency,
+                              "reporting_timezone": reporting_timezone}
+                stamp = datetime.combine(day, time.min, timezone.utc)
+                for metric, value, sample_size in (
+                    ("daily_spend", spend, None), ("impressions", impressions, None),
+                    ("clicks", clicks, None), ("platform_conversions", conversions, None),
+                    ("ctr", ctr, impressions), ("cpa", cpa, None),
+                ):
+                    if value is not None:
+                        rows.append(("marketing_daily", "analytics", metric, dimensions,
+                                     stamp, value, day, sample_size))
     return _series(rows)

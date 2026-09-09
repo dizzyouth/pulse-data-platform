@@ -111,6 +111,10 @@ ADAPTERS = {"shopify": MockShopifyAdapter, "meta_ads": MockMetaAdsAdapter,
 
 
 def adapter_for(config: SourceConfig):
+    if config.source_type in {"meta_ads", "tiktok_ads", "google_ads", "generic_ads"}:
+        from src.marketing.adapters import marketing_adapter_for
+
+        return marketing_adapter_for(config)
     if config.source_type == "shopify" and config.metadata.get("adapter") == "admin_api":
         from src.onboarding.shopify import ShopifyAdminApiAdapter
 

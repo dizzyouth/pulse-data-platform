@@ -48,10 +48,15 @@ WHERE status = 'FAIL' AND severity = 'CRITICAL';
 CREATE OR REPLACE VIEW monitoring_views.current_health AS
 WITH expected(dataset_name, layer) AS (VALUES
     ('silver_valid', 'silver'),
+    ('marketing_silver', 'silver'),
     ('daily_sales', 'gold'), ('customer_metrics', 'gold'),
     ('product_metrics', 'gold'), ('funnel_metrics', 'gold'),
     ('daily_sales', 'analytics'), ('customer_metrics', 'analytics'),
-    ('product_metrics', 'analytics'), ('funnel_metrics', 'analytics')
+    ('product_metrics', 'analytics'), ('funnel_metrics', 'analytics'),
+    ('marketing_daily', 'gold'), ('campaign_performance', 'gold'),
+    ('ad_group_performance', 'gold'), ('ad_performance', 'gold'),
+    ('marketing_daily', 'analytics'), ('campaign_performance', 'analytics'),
+    ('ad_group_performance', 'analytics'), ('ad_performance', 'analytics')
 ), successful AS (
     SELECT layer, max(checked_at_utc) AS latest_successful_check_at_utc
     FROM monitoring_views.check_history JOIN expected USING (dataset_name, layer)

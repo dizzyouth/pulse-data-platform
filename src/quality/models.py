@@ -81,6 +81,13 @@ class NumericBounds(Rule):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class LessThanOrEqual(Rule):
+    left_column: str
+    right_column: str
+    allow_null: bool = True
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Pattern(Rule):
     column: str
     pattern: str

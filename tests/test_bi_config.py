@@ -16,6 +16,9 @@ EXPECTED_MARTS = {
     "marts.top_customers",
     "marts.top_products",
     "marts.funnel_performance",
+    "marts.marketing_overview",
+    "marts.campaign_performance",
+    "marts.ad_performance",
 }
 
 
@@ -54,7 +57,8 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_bi_queries_reference_all_and_only_dbt_marts(self) -> None:
         query_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
-            for path in (PROJECT_ROOT / "bi" / "queries").glob("*.sql")
+            for directory in ("queries", "marketing_queries")
+            for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
         for mart in EXPECTED_MARTS:
             self.assertIn(mart, query_text)
@@ -72,6 +76,13 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_every_marketplace_query_preserves_business_context(self) -> None:
         for path in (PROJECT_ROOT / "bi" / "queries").glob("*.sql"):
             self.assertIn("business_id", path.read_text(encoding="utf-8").lower(), path.name)
+
+    def test_marketing_dashboard_is_separate_and_uses_explicit_attribution_labels(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn("Pulse Marketing Performance", source)
+        self.assertIn("Platform-reported conversions", source)
+        self.assertIn("Platform-reported ROAS", source)
+        self.assertIn('(\"business\", \"platform\", \"campaign\", \"currency\", \"start_date\", \"end_date\")', source)
 
     def test_lifetime_rankings_do_not_expose_mixed_currency_money(self) -> None:
         for name in ("top_customers.sql", "top_products.sql"):
