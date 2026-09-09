@@ -1,0 +1,20 @@
+{
+  "source_type": "shopify",
+  "source_id": "shopify_orders",
+  "enabled": true,
+  "business_id": "replace_with_business_id",
+  "ingestion_mode": "batch",
+  "schedule": "15 * * * *",
+  "schema_version": "shopify_orders_v1",
+  "credential_ref": "SHOPIFY_FIRST_STORE_ACCESS_TOKEN",
+  "metadata": {
+    "adapter": "admin_api",
+    "shop_domain_ref": "SHOPIFY_FIRST_STORE_SHOP_DOMAIN",
+    "backfill_start_ref": "SHOPIFY_FIRST_STORE_BACKFILL_START_DATE",
+    "api_version": "2026-07",
+    "page_size": 50,
+    "timeout_seconds": 30,
+    "max_retries": 3,
+    "backoff_seconds": 1
+  }
+}

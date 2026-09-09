@@ -19,6 +19,7 @@ class SourceTaskDescriptor:
     schema_version: str
     schedule: str
     task_id: str
+    adapter: str
 
 
 def _task_segment(value: str) -> str:
@@ -46,6 +47,7 @@ def discover_enabled_sources(
                     business_id=business.business_id, source_id=source.source_id,
                     source_type=source.source_type, schema_version=source.schema_version,
                     schedule=source.schedule,
-                    task_id=f"check_{_task_segment(business.business_id)}_{_task_segment(source.source_id)}",
+                    task_id=f"ingest_{_task_segment(business.business_id)}_{_task_segment(source.source_id)}",
+                    adapter=str(source.metadata.get("adapter", "mock")),
                 ))
     return tuple(sorted(output, key=lambda item: (item.business_id, item.source_id)))

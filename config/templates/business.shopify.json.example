@@ -1,0 +1,14 @@
+{
+  "business_id": "replace_with_business_id",
+  "business_name": "Replace with business display name",
+  "status": "ACTIVE",
+  "timezone": "America/New_York",
+  "currency": "USD",
+  "country": "US",
+  "enabled_sources": ["shopify_orders"],
+  "reporting_timezone": "America/New_York",
+  "metadata": {
+    "synthetic": false,
+    "purpose": "Phase 6.0 real Shopify orders"
+  }
+}

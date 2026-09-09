@@ -24,6 +24,7 @@ configure_windows_spark_environment()
 from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
+    BooleanType,
     DateType,
     DoubleType,
     IntegerType,
@@ -63,6 +64,15 @@ SILVER_VALID_SCHEMA = StructType(
         StructField("quantity", IntegerType(), True),
         StructField("unit_price", DoubleType(), True),
         StructField("currency", StringType(), True),
+        StructField("event_amount", DoubleType(), True),
+        StructField("event_scope", StringType(), True),
+        StructField("is_active", BooleanType(), True),
+        StructField("reporting_date", DateType(), True),
+        StructField("ingestion_id", StringType(), True),
+        StructField("record_id", StringType(), True),
+        StructField("extracted_at_utc", TimestampType(), True),
+        StructField("source_updated_at_utc", TimestampType(), True),
+        StructField("source_schema_version", StringType(), True),
         StructField("kafka_key", StringType(), True),
         StructField("kafka_topic", StringType(), True),
         StructField("kafka_partition", IntegerType(), True),
@@ -214,16 +224,25 @@ def _payment_units() -> Column:
 def _payment_revenue() -> Column:
     return F.when(
         F.col("event_type") == "payment_completed",
-        F.coalesce(F.col("quantity").cast("double"), F.lit(0.0))
-        * F.coalesce(F.col("unit_price"), F.lit(0.0)),
+        F.coalesce(
+            F.col("event_amount"),
+            F.coalesce(F.col("quantity").cast("double"), F.lit(0.0))
+            * F.coalesce(F.col("unit_price"), F.lit(0.0)),
+        ),
     ).otherwise(0.0)
+
+
+def _active(frame: DataFrame) -> DataFrame:
+    """Exclude superseded/cancelled connector projections from analytics."""
+
+    return frame.filter(F.coalesce(F.col("is_active"), F.lit(True)))
 
 
 def build_daily_sales(silver_valid: DataFrame) -> DataFrame:
     """Aggregate successful payment events by date, country, and currency."""
 
     daily = (
-        silver_valid.filter(F.col("event_type") == "payment_completed")
+        _active(silver_valid).filter(F.col("event_type") == "payment_completed")
         .groupBy("business_id", "event_date", "country", "currency")
         .agg(
             F.countDistinct("order_id").cast("long").alias("completed_orders"),
@@ -247,7 +266,7 @@ def build_daily_sales(silver_valid: DataFrame) -> DataFrame:
 def build_customer_metrics(silver_valid: DataFrame) -> DataFrame:
     """Build one lifetime-to-date metrics row per customer."""
 
-    return silver_valid.groupBy("business_id", "customer_id").agg(
+    return _active(silver_valid).filter(F.col("customer_id").isNotNull()).groupBy("business_id", "customer_id").agg(
         F.min("event_timestamp").alias("first_event_at"),
         F.max("event_timestamp").alias("last_event_at"),
         _event_count("product_viewed").alias("products_viewed"),
@@ -275,7 +294,7 @@ def build_product_metrics(silver_valid: DataFrame) -> DataFrame:
     """Build one metrics row per product with recorded product activity."""
 
     metrics = (
-        silver_valid.filter(F.col("product_id").isNotNull())
+        _active(silver_valid).filter(F.col("product_id").isNotNull())
         .groupBy("business_id", "product_id")
         .agg(
             F.collect_set("seller_id").alias("_seller_ids"),
@@ -322,7 +341,8 @@ def _safe_rate(numerator: str, denominator: str) -> Column:
 def build_funnel_metrics(silver_valid: DataFrame) -> DataFrame:
     """Aggregate event-count funnel stages by UTC event date and country."""
 
-    funnel = silver_valid.groupBy("business_id", "event_date", "country").agg(
+    # Shopify orders prove purchases/refunds, not upstream behavioral stages.
+    funnel = _active(silver_valid).filter(F.col("source_type") != "shopify").groupBy("business_id", "event_date", "country").agg(
         _event_count("product_viewed").alias("product_views"),
         _event_count("product_added_to_cart").alias("cart_adds"),
         _event_count("checkout_started").alias("checkouts_started"),

@@ -43,6 +43,10 @@ x-airflow-common: &airflow-common
     DBT_LOG_PATH: /tmp/pulse-dbt-logs
     PULSE_BUSINESSES_DIR: /opt/pulse/config/businesses
     PULSE_SOURCES_DIR: /opt/pulse/config/sources
+    SHOPIFY_FIRST_STORE_SHOP_DOMAIN: ${SHOPIFY_FIRST_STORE_SHOP_DOMAIN:-}
+    SHOPIFY_FIRST_STORE_ACCESS_TOKEN: ${SHOPIFY_FIRST_STORE_ACCESS_TOKEN:-}
+    SHOPIFY_FIRST_STORE_BACKFILL_START_DATE: ${SHOPIFY_FIRST_STORE_BACKFILL_START_DATE:-}
+    CONNECTOR_STATE_PATH: /opt/pulse/data/state/connectors.sqlite3
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
     - ./src:/opt/pulse/src:ro

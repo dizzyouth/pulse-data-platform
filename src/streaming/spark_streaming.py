@@ -21,6 +21,8 @@ configure_windows_spark_environment()
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
+    BooleanType,
+    DateType,
     DoubleType,
     IntegerType,
     StringType,
@@ -73,6 +75,15 @@ MARKETPLACE_EVENT_SCHEMA = StructType(
         StructField("quantity", IntegerType(), True),
         StructField("unit_price", DoubleType(), True),
         StructField("currency", StringType(), True),
+        StructField("event_amount", DoubleType(), True),
+        StructField("event_scope", StringType(), True),
+        StructField("is_active", BooleanType(), True),
+        StructField("reporting_date", DateType(), True),
+        StructField("ingestion_id", StringType(), True),
+        StructField("record_id", StringType(), True),
+        StructField("extracted_at_utc", TimestampType(), True),
+        StructField("source_updated_at_utc", TimestampType(), True),
+        StructField("source_schema_version", StringType(), True),
     ]
 )
 

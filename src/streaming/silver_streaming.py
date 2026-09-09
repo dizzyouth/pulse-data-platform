@@ -30,6 +30,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.streaming import DataStreamWriter
 from pyspark.sql.types import (
     ArrayType,
+    BooleanType,
     DateType,
     DoubleType,
     IntegerType,
@@ -73,8 +74,17 @@ MARKETPLACE_FIELDS = (
     "quantity",
     "unit_price",
     "currency",
+    "event_amount",
+    "event_scope",
+    "is_active",
+    "reporting_date",
 )
 LINEAGE_FIELDS = (
+    "ingestion_id",
+    "record_id",
+    "extracted_at_utc",
+    "source_updated_at_utc",
+    "source_schema_version",
     "kafka_key",
     "kafka_topic",
     "kafka_partition",
@@ -102,6 +112,15 @@ BRONZE_VALID_SCHEMA = StructType(
         StructField("quantity", IntegerType(), True),
         StructField("unit_price", DoubleType(), True),
         StructField("currency", StringType(), True),
+        StructField("event_amount", DoubleType(), True),
+        StructField("event_scope", StringType(), True),
+        StructField("is_active", BooleanType(), True),
+        StructField("reporting_date", DateType(), True),
+        StructField("ingestion_id", StringType(), True),
+        StructField("record_id", StringType(), True),
+        StructField("extracted_at_utc", TimestampType(), True),
+        StructField("source_updated_at_utc", TimestampType(), True),
+        StructField("source_schema_version", StringType(), True),
         StructField("kafka_key", StringType(), True),
         StructField("kafka_topic", StringType(), True),
         StructField("kafka_partition", IntegerType(), True),
@@ -286,9 +305,19 @@ def classify_silver_events(
         F.col("quantity").cast("integer").alias("quantity"),
         F.col("unit_price").cast("double").alias("unit_price"),
         F.upper(_normalized_optional_string("currency")).alias("currency"),
+        F.col("event_amount").cast("double").alias("event_amount"),
+        _normalized_optional_string("event_scope").alias("event_scope"),
+        F.coalesce(F.col("is_active"), F.lit(True)).cast("boolean").alias("is_active"),
+        F.col("reporting_date").cast("date").alias("reporting_date"),
         *LINEAGE_FIELDS,
         "raw_json",
-    ).withColumn("event_date", F.to_date("event_timestamp"))
+    ).withColumn(
+        "event_date",
+        F.when(
+            (F.col("source_type") == "shopify") & F.col("reporting_date").isNotNull(),
+            F.col("reporting_date"),
+        ).otherwise(F.to_date("event_timestamp")),
+    )
 
     quality_errors = F.array_compact(
         F.array(
@@ -314,11 +343,13 @@ def classify_silver_events(
                 F.lit("missing_event_id"),
             ),
             F.when(
-                F.col("customer_id").isNull() | (F.col("customer_id") == ""),
+                (F.col("source_type") != "shopify")
+                & (F.col("customer_id").isNull() | (F.col("customer_id") == "")),
                 F.lit("missing_customer_id"),
             ),
             F.when(
-                F.col("session_id").isNull() | (F.col("session_id") == ""),
+                (F.col("source_type") != "shopify")
+                & (F.col("session_id").isNull() | (F.col("session_id") == "")),
                 F.lit("missing_session_id"),
             ),
             F.when(
@@ -335,6 +366,10 @@ def classify_silver_events(
             F.when(
                 F.col("unit_price").isNotNull() & (F.col("unit_price") < 0),
                 F.lit("invalid_unit_price"),
+            ),
+            F.when(
+                F.col("event_amount").isNotNull() & (F.col("event_amount") < 0),
+                F.lit("invalid_event_amount"),
             ),
             F.when(
                 F.col("country").isNotNull()
@@ -388,16 +423,17 @@ def build_silver_snapshot(spark: SparkSession, paths: SilverPaths) -> None:
         event_watermark=paths.event_watermark,
         deduplicate=False,
     )
-    first_event = Window.partitionBy(
+    latest_event = Window.partitionBy(
         "business_id", "source_type", "source_id", "event_id"
     ).orderBy(
-        F.col("event_timestamp").asc(),
-        F.col("kafka_timestamp").asc_nulls_last(),
-        F.col("kafka_partition").asc_nulls_last(),
-        F.col("kafka_offset").asc_nulls_last(),
+        F.col("source_updated_at_utc").desc_nulls_last(),
+        F.col("extracted_at_utc").desc_nulls_last(),
+        F.col("kafka_timestamp").desc_nulls_last(),
+        F.col("kafka_partition").desc_nulls_last(),
+        F.col("kafka_offset").desc_nulls_last(),
     )
     valid = (
-        frames.valid.withColumn("_event_rank", F.row_number().over(first_event))
+        frames.valid.withColumn("_event_rank", F.row_number().over(latest_event))
         .filter(F.col("_event_rank") == 1)
         .drop("_event_rank")
     )

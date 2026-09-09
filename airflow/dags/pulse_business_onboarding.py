@@ -15,7 +15,7 @@ SOURCES = discover_enabled_sources()
 
 with DAG(
     dag_id=ONBOARDING_DAG_ID,
-    description="Validate onboarding contracts and local source adapters without external API calls",
+    description="Validate registry and run configuration-selected source connectors",
     schedule=None,
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
     catchup=False,
@@ -30,12 +30,14 @@ with DAG(
         do_xcom_push=False,
     )
     for source in SOURCES:
+        command = (
+            f"python -m src.onboarding.cli extract {source.business_id} {source.source_id}"
+            if source.adapter == "admin_api"
+            else f"python -m src.onboarding.cli source-check {source.business_id} {source.source_id}"
+        )
         source_check = BashOperator(
             task_id=source.task_id,
-            bash_command=(
-                "python -m src.onboarding.cli source-check "
-                f"{source.business_id} {source.source_id}"
-            ),
+            bash_command=command,
             cwd=PROJECT_ROOT,
             do_xcom_push=False,
         )

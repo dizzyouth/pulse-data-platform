@@ -68,4 +68,3 @@ metabase.db.*
 bi/runtime/
 .env.*
 !.env.example
-

@@ -30,6 +30,7 @@ explicit opt-in guard and a documented reason.
 | `test_spark_streaming`, `test_silver_streaming`, `test_gold_build` | FAST / CI-SAFE | Real local Spark transformations, finite file streams, deduplication, and Parquet writes using temporary fixtures. No Kafka connector download or persistent lake data. |
 | `test_orchestration` | FAST / CI-SAFE | Fake Airflow DAG/operators plus real Spark dataset validation; no Airflow installation or scheduler. |
 | `test_onboarding` | FAST / CI-SAFE | Registries, structured validation, source contracts, credential references, deterministic mock adapters, CLI behavior, and isolated multi-business fixtures; no external account or network. |
+| `test_shopify_connector` | CI-SAFE (one Spark path) | Offline GraphQL transport fixtures, pagination, retry/failure mapping, privacy, normalization, checkpoint safety, edits/refunds/cancellations, reporting timezone, and Bronze-to-Gold behavior. Real read-only checks are opt-in. |
 | `WarehouseContractTests` | FAST / CI-SAFE | Schema, column, and connection configuration contracts; no database. |
 | `test_dbt_project`, `test_bi_config`, `test_ci_config` | FAST / CI-SAFE | Static project/lineage, BI SQL/configuration, mocked provisioning, and CI policy checks; no Metabase or browser. |
 | `test_quality` | FAST / CI-SAFE | Typed results, reusable Spark checks, temporary Parquet CLI fixtures, and bounded snapshot reconciliation; no running services. |
@@ -1648,6 +1649,207 @@ real Shopify/Meta/TikTok API, OAuth, production secret manager, RLS/RBAC/SSO,
 customer UI, billing, connector cursor/backfill state, distributed ingestion
 queue, or tenant deployment isolation. Those connector, credential,
 access-control, and operational concerns are intentionally deferred to Phase 6.0.
+
+## Phase 6.0: Real Shopify orders
+
+Phase 6.0 adds the first read-only external connector while retaining every
+Phase 5.9 mock. A Shopify source with `metadata.adapter: "admin_api"` selects
+`ShopifyAdminApiAdapter`; a synthetic Shopify source still selects
+`MockShopifyAdapter`. No Meta Ads, TikTok Ads, or Google Ads network connector is
+included.
+
+The adapter uses the Shopify Admin **GraphQL** API over HTTPS. The default and
+tracked template version is `2026-07`, the current stable version when Phase 6.0
+was prepared. It is explicit and configurable as `metadata.api_version` so a
+future quarterly Shopify version can be tested and adopted without changing
+generic platform code. Do not use `unstable` in production. Review Shopify's
+[API versioning policy](https://shopify.dev/docs/api/usage/versioning) before
+upgrading. Authentication uses the `X-Shopify-Access-Token` header documented by
+[Shopify](https://shopify.dev/docs/api/usage/authentication). The connector never
+scrapes storefront or admin HTML.
+
+The runtime flow is:
+
+```text
+business/source registry
+  -> Shopify Admin GraphQL (updated_at filter + cursor pagination)
+  -> Phase 5.9 IngestionEnvelope
+  -> privacy-minimized Bronze Parquet
+  -> latest-version Silver snapshot
+  -> supported Gold commerce metrics
+  -> transactional PostgreSQL load -> dbt -> existing Metabase Business filter
+```
+
+Bronze retains `business_id`, `source_type`, `source_id`, `ingestion_id`, stable
+order-version `record_id`, `extracted_at_utc`, `source_updated_at_utc`, schema
+version, and the selected Shopify payload. Silver preserves those lineage fields,
+normalizes types, rejects invalid identity/currency/quantity/money values, and
+uses the newest `source_updated_at_utc` for each stable projected event. Repeated
+delivery of the same business/source/order/update is idempotent. Order edits emit
+tombstones for projections that disappeared, and cancellation makes all current
+order projections inactive. The finite Silver snapshot used by the analytics DAG
+therefore replaces analytical state instead of treating orders as immutable.
+
+### Authentication and registry template
+
+Copy and edit, but do not rename into the registry until all placeholders have
+been replaced:
+
+- `config/templates/business.shopify.json.example` ->
+  `config/businesses/<business_id>.json`
+- `config/templates/source.shopify.json.example` ->
+  `config/sources/<business_id>.shopify.json`
+
+The template captures business ID/display name, operational and reporting
+timezones, currency, country, source ID, environment-variable references, API
+version, page size, timeout, and bounded retry policy. Actual business names do
+not appear in generic Python code.
+
+Only environment-variable **names** are tracked. Put values in local `.env`:
+
+```dotenv
+SHOPIFY_FIRST_STORE_SHOP_DOMAIN=your-store.myshopify.com
+SHOPIFY_FIRST_STORE_ACCESS_TOKEN=<local value only>
+SHOPIFY_FIRST_STORE_BACKFILL_START_DATE=2026-01-01T00:00:00Z
+```
+
+The domain must be a `myshopify.com` hostname with no scheme or path. The token
+must grant `read_orders`; orders older than Shopify's normal order window can
+also require approved `read_all_orders` access. Use a backend/offline token
+suitable for scheduled work and grant no write scope merely for Pulse. `.env` is
+ignored, Compose passes only the documented Shopify values to Airflow, and token
+values are never placed in registry JSON, output, errors, samples, or logs.
+
+### Data contract and privacy
+
+Pulse requests order ID/name, created/updated/processed/cancelled timestamps,
+financial and fulfillment statuses, shop currency, original totals/subtotal,
+discounts/tax/shipping/refunds, customer ID when present, shipping country code,
+and line-item ID/product ID/variant ID/SKU/quantity/unit price/discount. Refunds
+retain refund ID/time/amount and product/variant/quantity allocation when Shopify
+provides it. Money stays in source currency; Phase 6.0 performs no FX conversion.
+
+The query and a second Bronze allowlist intentionally exclude customer name,
+email, phone, billing address, street address, postal code, city, province,
+geolocation, IP address, marketing consent, order notes, staff identity, payment
+details, and free-form refund notes. A shipping **country code** is the only
+address-derived field. Guest orders can have no customer ID; they remain in daily
+and product sales but are omitted from customer metrics rather than receiving a
+fabricated identity. SKU is product operational data, not customer data.
+
+Shopify orders support `daily_sales`, `customer_metrics` when a customer ID is
+available, and `product_metrics`. They never produce product-view, cart, or
+checkout facts, and all Shopify rows are excluded from `funnel_metrics`.
+
+Revenue semantics are conservative and explicit. Cancelled or void/unpaid orders
+do not contribute. For a paid, partially paid, partially refunded, or refunded
+order, recognized revenue is `max(original order total - total refunded, 0)` and
+is allocated proportionally across current line items. A full refund therefore
+contributes zero revenue and a partial refund contributes only the retained
+amount. Refund events remain available for refund counts, but are not subtracted
+again. Completed-order/refund counts remain lifecycle counts, and `units_sold`
+remains original paid quantity rather than a net-returned-units measure. The
+existing `gross_revenue` output column contains this recognized amount
+for Shopify; legacy marketplace events retain their historical payment-event
+semantics. Shipping, tax, and order-level refunds are proportionally allocated,
+so Phase 6.0 is not an accounting ledger.
+
+Operational timestamps stay UTC. Shopify `event_date` is derived from the
+business `reporting_timezone`, so a late-evening UTC order lands on the correct
+business day. Legacy marketplace event dates keep their existing UTC semantics.
+
+### Pagination, retry, checkpoints, and state
+
+The order connection follows `pageInfo.hasNextPage/endCursor` until exhausted and
+uses `sortKey: UPDATED_AT` with an inclusive `updated_at:>=<checkpoint>` filter.
+The inclusive boundary intentionally permits harmless redelivery for timestamp
+ties. A page size of 50 is the documented default and is configurable up to 100.
+Order, order-line, and refund-line connections all follow their cursors to
+completion; no connection silently stops at its first page.
+
+HTTP 429, GraphQL `THROTTLED`, timeouts, DNS/network failures, and Shopify 5xx
+responses use exponential backoff, honor `Retry-After`, and stop after the
+configured retry bound (default three retries). Authentication, permission, 404,
+malformed JSON/data, and other application errors fail immediately with sanitized
+operator messages.
+
+`data/state/connectors.sqlite3` stores one row per `(business_id, source_id)`:
+last attempt, last success, UTC checkpoint, extracted count, latest sanitized
+error, and health. It also remembers projected event IDs needed to tombstone
+removed order lines. It is local generated state and is ignored by Git. The
+checkpoint is advanced only after all records normalize, pass critical quality
+checks, and Bronze persistence succeeds. A failed extraction/write leaves the old
+checkpoint and previous data intact. Each business/source has independent state.
+
+The first run has no checkpoint and therefore requires the explicit environment
+backfill start. Later runs use the persisted watermark. `--limit` is accepted only
+for dry runs; limiting a persisted timestamp-only extraction could strand records
+that share the boundary timestamp.
+
+### Connect the first store safely
+
+1. In Shopify's Dev Dashboard/admin, create or install a read-only app for the
+   store and obtain an offline/background-capable Admin API token with
+   `read_orders` (and approved `read_all_orders` only if the chosen history needs
+   it). Do not grant write scopes to Pulse.
+2. Copy the exact `*.myshopify.com` hostname; do not use a storefront vanity URL.
+3. Put the domain, token, and an intentionally bounded ISO-8601 UTC backfill start
+   in local `.env` using the three placeholder names above.
+4. Copy the two templates, replace the business/source placeholders, and verify
+   timezone, reporting timezone, currency, country, source ID, credential
+   references, API version, and schedule.
+5. Run `python -m src.onboarding.cli validate <business_id>`.
+6. Run `python -m src.onboarding.cli source-check <business_id> <source_id>` and
+   confirm configuration, credential, authentication, reachability, permission,
+   and rate-limit fields without revealing a token.
+7. Run `python -m src.onboarding.cli extract <business_id> <source_id> --limit 5 --dry-run`.
+   This authenticates, fetches, normalizes, and quality-checks at most five orders
+   without writing Bronze or checkpoint state.
+8. Inspect the minimal sample for IDs, UTC timestamps, amounts, statuses,
+   currencies, line items, refunds, and absence of PII.
+9. Trigger the manual `pulse_business_onboarding` DAG, or run
+   `python -m src.onboarding.cli extract <business_id> <source_id>`, for the
+   controlled initial backfill. This is the first persistent operation.
+10. Run/trigger `pulse_analytics_pipeline`; validate Bronze, Silver, Gold, and
+    quality outputs before relying on metrics.
+11. Inspect `analytics.daily_sales`, `analytics.customer_metrics`, and
+    `analytics.product_metrics` filtered by `business_id`, then run dbt tests.
+12. Open the existing Metabase dashboard and select the new value in its Business
+    filter. No dashboard copy is required.
+
+Use `python -m src.onboarding.cli source-status <business_id> <source_id>` to see
+operational state. A failing Shopify task is a connector failure, not a business
+anomaly; no new metric history is fabricated, and short real history continues to
+produce `INSUFFICIENT_HISTORY` in the unchanged Phase 5.8 anomaly engine.
+
+### Offline and opt-in tests
+
+CI is fully offline and does not define Shopify credentials. Deterministic tests
+cover multiple pages, throttling, timeout, invalid authentication, malformed
+orders/responses, cancellation, partial/full refunds, duplicate versions, edits,
+currencies, privacy, idempotency, and checkpoint rollback. The real read-only
+smoke test skips unless all of these are explicitly set:
+
+```powershell
+$env:RUN_SHOPIFY_INTEGRATION_TESTS = "1"
+$env:SHOPIFY_INTEGRATION_SHOP_DOMAIN = "your-store.myshopify.com"
+$env:SHOPIFY_INTEGRATION_ACCESS_TOKEN = "<local value>"
+$env:SHOPIFY_INTEGRATION_BACKFILL_START_DATE = "2026-01-01T00:00:00Z"
+python -m unittest tests.test_shopify_connector.RealShopifyReadOnlyTests -v
+```
+
+The smoke test performs only health and a maximum two-order query. It does not
+mutate Shopify or persist Pulse data. Common failures map to explicit states:
+`configuration_invalid`, `credentials_missing`, `authentication_failed`,
+`permission_failure`, `unreachable`, `rate_limited`, `not_found`, `server_error`,
+or `unhealthy`. Check the shop hostname, token lifetime/scopes, API version, and
+network access in that order.
+
+Phase 6.0 deliberately omits OAuth UI, token refresh/rotation automation, secret
+manager infrastructure, webhooks, bulk operations, FX conversion,
+accounting-grade returns allocation,
+customer PII, and all other real advertising/source connectors. These are Phase
+6.1-or-later concerns.
 
 ## Airflow orchestration
 

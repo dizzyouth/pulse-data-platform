@@ -65,14 +65,35 @@ class SourceContract:
 
 OPTIONAL_STRING = FieldContract(types=(str,), required=False)
 OPTIONAL_NUMBER = FieldContract(types=(int, float), required=False)
+OPTIONAL_LIST = FieldContract(types=(list,), required=False)
 
 CONTRACTS = {
     ("shopify", "shopify_orders_v1"): SourceContract(
         source_type="shopify", schema_version="shopify_orders_v1",
-        fields={"order_id": FieldContract(types=(str,)), "customer_id": FieldContract(types=(str,)),
-                "created_at_utc": FieldContract(types=(str,)), "updated_at_utc": FieldContract(types=(str,)),
-                "currency": FieldContract(types=(str,)), "total_amount": FieldContract(types=(int, float)),
-                "product_id": OPTIONAL_STRING, "quantity": OPTIONAL_NUMBER},
+        fields={
+            "order_id": FieldContract(types=(str,)),
+            "order_name": OPTIONAL_STRING,
+            "customer_id": OPTIONAL_STRING,
+            "created_at_utc": FieldContract(types=(str,)),
+            "updated_at_utc": FieldContract(types=(str,)),
+            "processed_at_utc": OPTIONAL_STRING,
+            "cancelled_at_utc": OPTIONAL_STRING,
+            "financial_status": FieldContract(types=(str,)),
+            "fulfillment_status": FieldContract(types=(str,)),
+            "currency": FieldContract(types=(str,)),
+            "total_amount": FieldContract(types=(int, float)),
+            "subtotal_amount": OPTIONAL_NUMBER,
+            "discount_amount": OPTIONAL_NUMBER,
+            "tax_amount": OPTIONAL_NUMBER,
+            "shipping_amount": OPTIONAL_NUMBER,
+            "refunded_amount": OPTIONAL_NUMBER,
+            "country": OPTIONAL_STRING,
+            "line_items": OPTIONAL_LIST,
+            "refunds": OPTIONAL_LIST,
+            # Phase 5.9 compatibility fields. Real records use line_items.
+            "product_id": OPTIONAL_STRING,
+            "quantity": OPTIONAL_NUMBER,
+        },
         unique_grain=("order_id",), source_timestamp="updated_at_utc", currency_fields=("currency",)),
     ("meta_ads", "meta_ads_daily_v1"): SourceContract(
         source_type="meta_ads", schema_version="meta_ads_daily_v1",

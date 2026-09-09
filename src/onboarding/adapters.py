@@ -77,9 +77,11 @@ class MockShopifyAdapter(MockSourceAdapter):
     payloads = (
         {"order_id": "ord_shared", "customer_id": "cus_shared", "created_at_utc": "2026-01-04T10:00:00Z",
          "updated_at_utc": "2026-01-04T10:05:00Z", "currency": "USD", "total_amount": 120.0,
+         "financial_status": "PAID", "fulfillment_status": "FULFILLED",
          "product_id": "prd_shared", "quantity": 2},
         {"order_id": "ord_demo_2", "customer_id": "cus_demo_2", "created_at_utc": "2026-01-05T10:00:00Z",
          "updated_at_utc": "2026-01-05T10:05:00Z", "currency": "USD", "total_amount": 80.0,
+         "financial_status": "PAID", "fulfillment_status": "UNFULFILLED",
          "product_id": "prd_demo_2", "quantity": 1},
     )
 
@@ -109,6 +111,12 @@ ADAPTERS = {"shopify": MockShopifyAdapter, "meta_ads": MockMetaAdsAdapter,
 
 
 def adapter_for(config: SourceConfig):
+    if config.source_type == "shopify" and config.metadata.get("adapter") == "admin_api":
+        from src.onboarding.shopify import ShopifyAdminApiAdapter
+
+        return ShopifyAdminApiAdapter(config)
+    if config.source_type == "shopify" and config.metadata.get("adapter", "mock") != "mock":
+        raise ValueError("Unsupported Shopify adapter selection")
     try:
         return ADAPTERS[config.source_type](config)
     except KeyError:

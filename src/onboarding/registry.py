@@ -19,6 +19,7 @@ DEFAULT_BUSINESSES_DIR = PROJECT_ROOT / "config" / "businesses"
 DEFAULT_SOURCES_DIR = PROJECT_ROOT / "config" / "sources"
 CRON_PATTERN = re.compile(r"^[0-9*/?,\-]+$")
 CREDENTIAL_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
+SHOPIFY_API_VERSION_PATTERN = re.compile(r"^20\d{2}-(01|04|07|10)$")
 
 
 class RegistryError(ValueError):
@@ -134,4 +135,20 @@ def validate_business(registry: BusinessRegistry, business_id: str):
             contract_for(source.source_type, source.schema_version)
         except SourceContractError as error:
             issue("unsupported_schema_version", prefix + ".schema_version", str(error))
+        if source.source_type == "shopify" and source.metadata.get("adapter", "mock") not in ("mock", "admin_api"):
+            issue("unsupported_adapter", prefix + ".metadata.adapter",
+                  "Expected mock or admin_api")
+        if source.source_type == "shopify" and source.metadata.get("adapter") == "admin_api":
+            domain_ref = source.metadata.get("shop_domain_ref", "")
+            if not CREDENTIAL_PATTERN.fullmatch(str(domain_ref)):
+                issue("missing_shop_domain_ref", prefix + ".metadata.shop_domain_ref",
+                      "Declare an uppercase environment-variable reference")
+            api_version = str(source.metadata.get("api_version", ""))
+            if not SHOPIFY_API_VERSION_PATTERN.fullmatch(api_version):
+                issue("invalid_shopify_api_version", prefix + ".metadata.api_version",
+                      "Declare a supported quarterly Shopify API version")
+            backfill_ref = source.metadata.get("backfill_start_ref", "")
+            if not CREDENTIAL_PATTERN.fullmatch(str(backfill_ref)):
+                issue("missing_backfill_start_ref", prefix + ".metadata.backfill_start_ref",
+                      "Declare an environment-variable reference for the initial boundary")
     return ValidationReport(business_id=business_id, issues=tuple(issues), source_count=len(sources))

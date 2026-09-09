@@ -6,7 +6,7 @@ sources:
     schema: analytics
     tables:
       - name: daily_sales
-        description: "Daily paid-order measures at business, event date, country, and currency grain; revenue is gross and refunds are not netted."
+        description: "Daily paid-order measures at business, reporting date, country, and currency grain; Shopify revenue is recognized net of refunds and cancellations."
         data_tests:
           - unique_combination:
               column_names: [business_id, event_date, country, currency]
@@ -14,7 +14,7 @@ sources:
           - name: business_id
             data_tests: [not_null]
           - name: event_date
-            description: "UTC calendar date of the payment events."
+            description: "Business reporting date for Shopify and UTC event date for legacy marketplace events."
             data_tests: [not_null]
           - name: completed_orders
             description: "Count of distinct successfully paid orders."
@@ -23,7 +23,7 @@ sources:
             description: "Units attached to completed payment events."
             data_tests: [not_null, nonnegative]
           - name: gross_revenue
-            description: "Gross payment revenue in the row's currency, before refunds or currency conversion."
+            description: "Recognized revenue in source currency; Shopify refunds/cancellations are reflected and no FX conversion is applied."
             data_tests: [not_null, nonnegative]
       - name: customer_metrics
         description: "Lifetime-to-date event and paid-commerce measures at business/customer grain."
@@ -37,7 +37,7 @@ sources:
             description: "Stable marketplace customer identifier."
             data_tests: [not_null]
           - name: total_revenue
-            description: "Customer gross paid revenue without refund netting or currency conversion."
+            description: "Customer recognized revenue in source currency; Shopify refunds/cancellations are reflected."
             data_tests: [not_null, nonnegative]
       - name: product_metrics
         description: "Lifetime-to-date activity and paid-commerce measures at business/product grain."
@@ -51,7 +51,7 @@ sources:
             description: "Stable marketplace product identifier."
             data_tests: [not_null]
           - name: gross_revenue
-            description: "Product gross paid revenue without refund netting or currency conversion."
+            description: "Product recognized revenue in source currency; Shopify refunds/cancellations are reflected."
             data_tests: [not_null, nonnegative]
       - name: funnel_metrics
         description: "Business-scoped daily country funnel stages and adjacent-stage conversion rates."

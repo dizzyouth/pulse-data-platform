@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: revenue_by_day
-    description: "Daily revenue presentation by business and currency; neither businesses nor currencies are mixed."
+    description: "Daily recognized-revenue presentation by business and currency; neither businesses nor currencies are mixed."
     data_tests:
       - unique_combination:
           column_names: [business_id, event_date, currency]
@@ -11,13 +11,13 @@ models:
         description: "Stable business registry identifier."
         data_tests: [not_null]
       - name: event_date
-        description: "UTC revenue date."
+        description: "Business reporting date for Shopify and UTC date for legacy marketplace events."
         data_tests: [not_null]
       - name: currency
         description: "ISO currency dimension retained to prevent invalid cross-currency sums."
         data_tests: [not_null]
       - name: gross_revenue
-        description: "Gross paid revenue before refunds, expressed in currency."
+        description: "Recognized revenue in source currency; Shopify refunds and cancellations are reflected."
         data_tests: [not_null, nonnegative]
   - name: top_customers
     description: "Customer commerce metrics ranked independently inside each business."
