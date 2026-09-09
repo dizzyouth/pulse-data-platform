@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import psycopg
@@ -19,6 +20,11 @@ from src.warehouse.load_gold import (
 
 
 class WarehouseContractTests(unittest.TestCase):
+    def test_legacy_business_default_is_explicitly_typed(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "src" / "warehouse" /
+                  "load_gold.py").read_text(encoding="utf-8")
+        self.assertIn("sql.Literal(DEFAULT_BUSINESS_ID)", source)
+
     def test_schema_and_table_names_are_explicit(self) -> None:
         self.assertEqual(WAREHOUSE_SCHEMA, "analytics")
         self.assertEqual(
@@ -33,6 +39,8 @@ class WarehouseContractTests(unittest.TestCase):
             self.assertTrue(spec.columns)
             self.assertEqual(len(spec.required_columns), len(set(spec.required_columns)))
             self.assertIn(spec.index_column, spec.required_columns)
+            self.assertEqual(spec.required_columns[0], "business_id")
+            self.assertFalse(spec.columns[0].nullable)
             self.assertTrue(all(column.postgres_type in supported for column in spec.columns))
 
     def test_required_columns_accept_exact_mapping(self) -> None:

@@ -13,6 +13,14 @@ from typing import Any, Protocol
 
 from confluent_kafka import Consumer, KafkaException
 
+from src.onboarding import (
+    DEFAULT_BUSINESS_ID,
+    DEFAULT_MARKETPLACE_SCHEMA_VERSION,
+    DEFAULT_SOURCE_ID,
+    DEFAULT_SOURCE_TYPE,
+)
+from src.onboarding.models import IDENTIFIER_PATTERN
+
 DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092"
 DEFAULT_MARKETPLACE_TOPIC = "marketplace.events"
 DEFAULT_CONSUMER_GROUP = "pulse.marketplace.consumer"
@@ -28,6 +36,7 @@ REQUIRED_EVENT_FIELDS = frozenset(
         "country",
     }
 )
+IDENTITY_FIELDS = ("business_id", "source_type", "source_id", "schema_version")
 
 
 class ConsumerClient(Protocol):
@@ -73,16 +82,49 @@ def deserialize_marketplace_message(message: Any) -> dict[str, Any]:
             f"message is missing required field(s): {', '.join(missing)}"
         )
 
+    supplied_identity = [field in payload for field in IDENTITY_FIELDS]
+    legacy_record = not any(supplied_identity)
+    if any(supplied_identity) and not all(supplied_identity):
+        missing_identity = [
+            field for field, supplied in zip(IDENTITY_FIELDS, supplied_identity)
+            if not supplied
+        ]
+        raise MarketplaceMessageError(
+            "message has partial source identity; missing: "
+            + ", ".join(missing_identity)
+        )
+    if legacy_record:
+        payload.update(
+            business_id=DEFAULT_BUSINESS_ID,
+            source_type=DEFAULT_SOURCE_TYPE,
+            source_id=DEFAULT_SOURCE_ID,
+            schema_version=DEFAULT_MARKETPLACE_SCHEMA_VERSION,
+        )
+    for field_name in IDENTITY_FIELDS[:3]:
+        if not isinstance(payload[field_name], str) or not IDENTIFIER_PATTERN.fullmatch(
+            payload[field_name]
+        ):
+            raise MarketplaceMessageError(
+                f"message field {field_name} is not a valid identifier"
+            )
+    if not isinstance(payload["schema_version"], str) or not payload["schema_version"].strip():
+        raise MarketplaceMessageError("message field schema_version cannot be empty")
+
     raw_key = message.key()
     if raw_key is None:
         raise MarketplaceMessageError("Kafka message key is missing")
     try:
-        customer_id = raw_key.decode("utf-8")
+        record_key = raw_key.decode("utf-8")
     except UnicodeDecodeError as error:
         raise MarketplaceMessageError("Kafka message key is not valid UTF-8") from error
-    if customer_id != payload["customer_id"]:
+    expected_key = (
+        payload["customer_id"]
+        if legacy_record
+        else f"{payload['business_id']}|{payload['customer_id']}"
+    )
+    if record_key != expected_key:
         raise MarketplaceMessageError(
-            "Kafka message key does not match payload customer_id"
+            "Kafka message key does not match payload business/customer identity"
         )
     return payload
 

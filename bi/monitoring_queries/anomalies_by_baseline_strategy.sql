@@ -1,6 +1,7 @@
 SELECT baseline_strategy,sum(anomaly_count) AS anomaly_count
 FROM monitoring_views.anomalies_by_strategy
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND baseline_strategy = {{baseline_strategy}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]

@@ -1,9 +1,10 @@
 select
+    business_id,
     product_id,
     seller_id,
     gross_revenue,
     units_sold,
     payments_completed,
     distinct_customers,
-    rank() over (order by gross_revenue desc) as revenue_rank
+    rank() over (partition by business_id order by gross_revenue desc) as revenue_rank
 from {{ source('analytics', 'product_metrics') }}

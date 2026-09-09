@@ -1,8 +1,9 @@
-SELECT escalated_at_utc,escalation_level,provider,destination_key,lifecycle_status,
+SELECT escalated_at_utc,business_id,escalation_level,provider,destination_key,lifecycle_status,
        severity,dataset_name,layer,title,occurrence_count,first_seen_at_utc,
        last_seen_at_utc,alert_event_id
 FROM monitoring_views.escalation_summary
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND severity = {{severity}}]]

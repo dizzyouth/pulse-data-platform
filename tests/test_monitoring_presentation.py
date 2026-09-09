@@ -58,28 +58,29 @@ class DashboardContractsTests(unittest.TestCase):
             elif filename in ("recent_warnings", "recent_critical_failures", "failing_checks"):
                 self.assertEqual(tags, {"layer", "dataset", "start_date", "end_date"})
             elif filename in ("recent_anomalies", "anomalies_by_metric"):
-                self.assertEqual(tags, {"layer", "dataset", "severity", "start_date", "end_date"})
+                self.assertEqual(tags, {"business", "layer", "dataset", "severity", "start_date", "end_date"})
             elif filename == "active_alerts":
-                self.assertEqual(tags, {"layer", "dataset", "severity", "lifecycle_status"})
+                self.assertEqual(tags, {"business", "layer", "dataset", "severity", "lifecycle_status"})
             elif filename in ("recent_alert_events", "alerts_by_severity", "alerts_by_status", "recurring_alerts", "resolved_alerts"):
-                self.assertEqual(tags, {"layer", "dataset", "severity", "lifecycle_status", "start_date", "end_date"})
+                self.assertEqual(tags, {"business", "layer", "dataset", "severity", "lifecycle_status", "start_date", "end_date"})
             elif filename in ("recent_deliveries", "failed_deliveries", "delivery_status_by_provider"):
-                self.assertEqual(tags, {"layer", "dataset", "severity", "lifecycle_status",
+                self.assertEqual(tags, {"business", "layer", "dataset", "severity", "lifecycle_status",
                                         "delivery_status", "provider", "start_date", "end_date"})
             elif filename == "escalated_active_alerts":
-                self.assertEqual(tags, {"layer", "dataset", "severity", "lifecycle_status",
+                self.assertEqual(tags, {"business", "layer", "dataset", "severity", "lifecycle_status",
                                         "provider", "start_date", "end_date"})
             elif filename in ("anomalies_by_baseline_strategy", "baseline_fallback_usage"):
-                self.assertEqual(tags, {"baseline_strategy", "layer", "dataset", "severity",
+                self.assertEqual(tags, {"business", "baseline_strategy", "layer", "dataset", "severity",
                                         "start_date", "end_date"})
             elif filename in ("baseline_confidence_distribution", "recent_contextual_anomalies"):
-                self.assertEqual(tags, {"baseline_strategy", "confidence", "layer", "dataset",
+                self.assertEqual(tags, {"business", "baseline_strategy", "confidence", "layer", "dataset",
                                         "severity", "start_date", "end_date"})
             else:
                 self.assertEqual(tags, set(dashboard.FILTERS) - {
                     "severity", "lifecycle_status", "delivery_status", "provider",
-                    "baseline_strategy", "confidence"
+                    "baseline_strategy", "confidence", "business"
                 })
+        self.assertEqual(dashboard.FILTERS["business"], "Business")
 
     def test_provisioning_is_idempotent_preserves_unrelated_cards_and_maps_valid_tags(self):
         objects = {}
@@ -236,6 +237,7 @@ class PresentationPostgresTests(unittest.TestCase):
                           "severity": "WARNING", "lifecycle_status": "OPEN",
                           "delivery_status": "SENT", "provider": "log",
                           "baseline_strategy": "robust_history", "confidence": "LOW",
+                          "business": "pulse_demo_store",
                           "start_date": "2026-01-01", "end_date": "2026-01-01"}
                 filtered = re.sub(r"\{\{(\w+)\}\}", lambda m: f"%({m[1]})s", filtered)
                 self.fetch(filtered, values)

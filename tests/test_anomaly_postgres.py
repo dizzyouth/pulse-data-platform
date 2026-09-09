@@ -44,9 +44,9 @@ class AnomalyPostgresTests(unittest.TestCase):
         with psycopg.connect(**cls.config) as connection:
             connection.execute("CREATE SCHEMA analytics")
             connection.execute("""CREATE TABLE analytics.daily_sales (
-                event_date date,currency text,completed_orders bigint,gross_revenue double precision)""")
+                business_id text,event_date date,currency text,completed_orders bigint,gross_revenue double precision)""")
             connection.execute("""CREATE TABLE analytics.funnel_metrics (
-                event_date date,country text,view_to_cart_rate double precision,
+                business_id text,event_date date,country text,view_to_cart_rate double precision,
                 cart_to_checkout_rate double precision,checkout_to_order_rate double precision,
                 order_to_payment_rate double precision,product_views bigint,cart_adds bigint,
                 checkouts_started bigint,orders_created bigint)""")
@@ -73,8 +73,9 @@ class AnomalyPostgresTests(unittest.TestCase):
 
     def anomaly(self, context, status=AnomalyStatus.ANOMALY, severity=Severity.WARNING):
         return AnomalyResult(anomaly_id=context.logical_id("pulse-anomaly-result-v1", "daily_sales",
-            "analytics", "gross_revenue", '{"currency":"USD"}'), metric_name="gross_revenue",
-            dataset_name="daily_sales", layer="analytics", dimensions={"currency": "USD"},
+            "analytics", "gross_revenue", '{"business_id":"business_a","currency":"USD"}'), metric_name="gross_revenue",
+            dataset_name="daily_sales", layer="analytics",
+            dimensions={"business_id": "business_a", "currency": "USD"},
             current_value=200, baseline_value=100, deviation_value=100, deviation_percent=100,
             threshold={"warning_ratio": .5}, method="percentage_deviation", status=status,
             severity=severity, observed_at_utc=datetime(2026, 1, 8, tzinfo=timezone.utc),
@@ -90,7 +91,8 @@ class AnomalyPostgresTests(unittest.TestCase):
         self.assertEqual(self.fetch("SELECT source_type,severity,status,count(*) FROM monitoring.alert_events GROUP BY 1,2,3"),
                          [("ANOMALY", "WARNING", "OPEN", 1)])
         row = self.fetch("SELECT current_value,baseline_value,dimensions,method,history_count FROM monitoring.anomaly_results")[0]
-        self.assertEqual(row, (200, 100, {"currency": "USD"}, "percentage_deviation", 7))
+        self.assertEqual(row, (200, 100, {"business_id": "business_a", "currency": "USD"},
+                               "percentage_deviation", 7))
 
     def test_normal_and_insufficient_results_do_not_alert(self):
         context = self.context()
@@ -109,7 +111,8 @@ class AnomalyPostgresTests(unittest.TestCase):
         timestamps = tuple(datetime(2025, 12, 1, tzinfo=timezone.utc) + timedelta(days=index)
                            for index in range(39))
         series = MetricSeries(metric_name="gross_revenue", dataset_name="daily_sales", layer="analytics",
-                              dimensions={"currency": "USD"}, history=tuple(100 + index for index in range(38)),
+                              dimensions={"business_id": "business_a", "currency": "USD"},
+                              history=tuple(100 + index for index in range(38)),
                               current_value=138, history_observed_at_utc=timestamps[:-1],
                               observed_at_utc=timestamps[-1])
         result = evaluate(series, AnomalyPolicy(baseline_strategies=("trend",)), uuid4())
@@ -164,19 +167,23 @@ class AnomalyPostgresTests(unittest.TestCase):
         with psycopg.connect(**self.config) as connection:
             for index in range(8):
                 day = (base + timedelta(days=index)).date()
-                connection.execute("INSERT INTO analytics.daily_sales VALUES (%s,'USD',%s,%s),(%s,'EUR',%s,%s)",
+                connection.execute("INSERT INTO analytics.daily_sales VALUES ('business_a',%s,'USD',%s,%s),('business_a',%s,'EUR',%s,%s)",
                                    (day, index + 1, 100 + index, day, index + 2, 200 + index))
-                connection.execute("INSERT INTO analytics.funnel_metrics VALUES (%s,'US',%s,.5,.5,.5,200,150,120,100)",
+                connection.execute("INSERT INTO analytics.funnel_metrics VALUES ('business_a',%s,'US',%s,.5,.5,.5,200,150,120,100)",
                                    (day, .5 + index / 100))
         series = load_metric_series()
         indexed = {(item.metric_name, tuple(sorted(item.dimensions.items()))): item for item in series}
         self.assertEqual(len(indexed[("row_count", ())].history), 7)
-        self.assertEqual(indexed[("completed_order_volume", ())].current_value, 17)
-        self.assertEqual(indexed[("gross_revenue", (("currency", "USD"),))].current_value, 107)
-        self.assertEqual(indexed[("gross_revenue", (("currency", "EUR"),))].current_value, 207)
-        self.assertEqual(len(indexed[("view_to_cart_rate", (("country", "US"),))].history), 7)
-        self.assertEqual(indexed[("view_to_cart_rate", (("country", "US"),))].current_sample_size, 200)
-        self.assertEqual(len(indexed[("gross_revenue", (("currency", "USD"),))].history_observed_at_utc), 7)
+        business = (("business_id", "business_a"),)
+        self.assertEqual(indexed[("completed_order_volume", business)].current_value, 17)
+        usd = (("business_id", "business_a"), ("currency", "USD"))
+        eur = (("business_id", "business_a"), ("currency", "EUR"))
+        country = (("business_id", "business_a"), ("country", "US"))
+        self.assertEqual(indexed[("gross_revenue", usd)].current_value, 107)
+        self.assertEqual(indexed[("gross_revenue", eur)].current_value, 207)
+        self.assertEqual(len(indexed[("view_to_cart_rate", country)].history), 7)
+        self.assertEqual(indexed[("view_to_cart_rate", country)].current_sample_size, 200)
+        self.assertEqual(len(indexed[("gross_revenue", usd)].history_observed_at_utc), 7)
 
     def test_new_presentation_views_are_read_only_and_semantically_exact(self):
         context = self.context()
@@ -201,6 +208,10 @@ class AnomalyPostgresTests(unittest.TestCase):
         self.assertEqual(self.fetch("SELECT baseline_strategy,anomaly_count FROM "
                                     "monitoring_views.anomalies_by_strategy"),
                          [("robust_history", 1)])
+        self.assertEqual(self.fetch("SELECT business_id FROM monitoring_views.recent_anomalies"),
+                         [("business_a",)])
+        self.assertEqual(self.fetch("SELECT business_id FROM monitoring_views.recent_alert_events"),
+                         [("business_a",)])
 
 
 if __name__ == "__main__":

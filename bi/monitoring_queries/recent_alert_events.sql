@@ -1,7 +1,8 @@
-SELECT created_at_utc,source_type,dataset_name,layer,severity,status,title,message,
+SELECT created_at_utc,business_id,source_type,dataset_name,layer,severity,status,title,message,
        dag_id,airflow_run_id,task_id,attempt_number
 FROM monitoring_views.recent_alert_events
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND lifecycle_status = {{lifecycle_status}}]]

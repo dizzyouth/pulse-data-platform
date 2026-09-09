@@ -49,25 +49,26 @@ def load_metric_series():
           FROM logical_runs UNION ALL SELECT dataset_name,layer,'failed_check_count','{}'::jsonb,
           completed_at_utc,failed_checks,quality_run_id::text FROM logical_runs""").fetchall()
         rows.extend((*row, None) for row in quality)
-        sales = connection.execute("""SELECT event_date,sum(completed_orders)::double precision
-          FROM analytics.daily_sales GROUP BY event_date ORDER BY event_date""").fetchall()
-        rows.extend(("daily_sales", "analytics", "completed_order_volume", {},
-                     datetime.combine(day, time.min, timezone.utc), value, day, None) for day, value in sales)
-        revenue = connection.execute("""SELECT event_date,currency,sum(gross_revenue)::double precision
-          FROM analytics.daily_sales GROUP BY event_date,currency ORDER BY event_date,currency""").fetchall()
-        rows.extend(("daily_sales", "analytics", "gross_revenue", {"currency": currency},
+        sales = connection.execute("""SELECT business_id,event_date,sum(completed_orders)::double precision
+          FROM analytics.daily_sales GROUP BY business_id,event_date ORDER BY business_id,event_date""").fetchall()
+        rows.extend(("daily_sales", "analytics", "completed_order_volume", {"business_id": business_id},
+                     datetime.combine(day, time.min, timezone.utc), value, day, None) for business_id, day, value in sales)
+        revenue = connection.execute("""SELECT business_id,event_date,currency,sum(gross_revenue)::double precision
+          FROM analytics.daily_sales GROUP BY business_id,event_date,currency ORDER BY business_id,event_date,currency""").fetchall()
+        rows.extend(("daily_sales", "analytics", "gross_revenue", {"business_id": business_id, "currency": currency},
                      datetime.combine(day, time.min, timezone.utc), value, day, None)
-                    for day, currency, value in revenue)
+                    for business_id, day, currency, value in revenue)
         rates = (("view_to_cart_rate", 0), ("cart_to_checkout_rate", 1),
                  ("checkout_to_order_rate", 2), ("order_to_payment_rate", 3))
-        funnel = connection.execute("""SELECT event_date,country,view_to_cart_rate,cart_to_checkout_rate,
+        funnel = connection.execute("""SELECT business_id,event_date,country,view_to_cart_rate,cart_to_checkout_rate,
           checkout_to_order_rate,order_to_payment_rate,product_views,cart_adds,
-          checkouts_started,orders_created FROM analytics.funnel_metrics ORDER BY event_date,country""").fetchall()
-        for day, country, *values in funnel:
+          checkouts_started,orders_created FROM analytics.funnel_metrics ORDER BY business_id,event_date,country""").fetchall()
+        for business_id, day, country, *values in funnel:
             rate_values, denominators = values[:4], values[4:]
             for metric, index in rates:
                 value, sample_size = rate_values[index], denominators[index]
                 if value is not None:
-                    rows.append(("funnel_metrics", "analytics", metric, {"country": country},
+                    rows.append(("funnel_metrics", "analytics", metric,
+                                 {"business_id": business_id, "country": country},
                                  datetime.combine(day, time.min, timezone.utc), value, day, sample_size))
     return _series(rows)

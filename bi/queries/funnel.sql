@@ -1,4 +1,5 @@
 SELECT
+    business_id,
     event_date,
     country,
     product_views,
@@ -11,4 +12,4 @@ SELECT
     checkout_to_order_rate,
     order_to_payment_rate
 FROM marts.funnel_performance
-ORDER BY event_date, country;
+ORDER BY business_id, event_date, country;

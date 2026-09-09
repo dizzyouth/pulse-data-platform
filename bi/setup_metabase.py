@@ -185,14 +185,15 @@ def _ensure_dashboard(session_id: str, database_id: int) -> None:
     cards = []
     for filename, title, display in specs:
         sql = (Path(__file__).parent / "queries" / f"{filename}.sql").read_text()
-        dimensions = (["start_date", "end_date", "currency"] if filename.startswith("revenue")
-                      else ["start_date", "end_date", "country"] if filename in ("funnel", "geography") else [])
+        dimensions = (["business", "start_date", "end_date", "currency"] if filename.startswith("revenue")
+                      else ["business", "start_date", "end_date", "country"] if filename in ("funnel", "geography")
+                      else ["business"])
         tags = {name: {"id": name, "name": name, "display-name": name.replace("_", " ").title(),
                        "type": "date" if name.endswith("date") else "text", "required": False}
                 for name in dimensions}
         clauses = []
         for name in dimensions:
-            column = "event_date" if name.endswith("date") else name
+            column = "event_date" if name.endswith("date") else "business_id" if name == "business" else name
             operator = ">=" if name == "start_date" else "<=" if name == "end_date" else "="
             clauses.append(f"[[AND {column} {operator} {{{{{name}}}}}]]")
         if clauses:
@@ -220,7 +221,7 @@ def _ensure_dashboard(session_id: str, database_id: int) -> None:
     dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
     parameters = [{"id": name, "name": name.replace("_", " ").title(), "slug": name,
                    "type": "date/single" if name.endswith("date") else "string/="}
-                  for name in ("start_date", "end_date", "currency", "country")]
+                  for name in ("business", "start_date", "end_date", "currency", "country")]
     dashcards = dashboard.get("dashcards", [])
     for index, (card, dimensions) in enumerate(cards):
         existing = next((d for d in dashcards if d.get("card_id") == card["id"]), None)

@@ -32,6 +32,7 @@ from src.orchestration.alert_operations_config import (
     ALERT_OPERATIONS_SCHEDULE,
     ALERT_OPERATIONS_TASK_ID,
 )
+from src.orchestration.business_sources import ONBOARDING_DAG_ID, discover_enabled_sources
 from src.orchestration.validation import (
     validate_bronze_available,
     validate_gold_output,
@@ -162,6 +163,24 @@ class AirflowDagContractTests(unittest.TestCase):
         self.assertFalse(task.kwargs["do_xcom_push"])
         self.assertEqual(task.downstream_task_ids, set())
 
+    def test_business_onboarding_dag_discovers_enabled_sources(self) -> None:
+        module = self.import_dag(
+            "pulse_business_onboarding.py", "pulse_business_onboarding_test"
+        )
+        descriptors = discover_enabled_sources()
+        self.assertEqual(module.dag.dag_id, ONBOARDING_DAG_ID)
+        self.assertIsNone(module.dag.schedule)
+        self.assertEqual(
+            set(module.dag.task_dict),
+            {"validate_business_registry", *(item.task_id for item in descriptors)},
+        )
+        root = module.dag.task_dict["validate_business_registry"]
+        self.assertEqual(root.downstream_task_ids, {item.task_id for item in descriptors})
+        for descriptor in descriptors:
+            command = module.dag.task_dict[descriptor.task_id].kwargs["bash_command"]
+            self.assertIn(descriptor.business_id, command)
+            self.assertIn(descriptor.source_id, command)
+
 
 @unittest.skipUnless(os.environ.get("RUN_SPARK_TESTS", "1") == "1", "Spark tests disabled")
 class OrchestrationValidationTests(unittest.TestCase):
@@ -187,6 +206,10 @@ class OrchestrationValidationTests(unittest.TestCase):
     def bronze_row(event_id: str = "evt_1") -> dict:
         timestamp = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
         return {
+            "business_id": "pulse_demo_store",
+            "source_type": "csv_manual",
+            "source_id": "pulse_marketplace_demo",
+            "schema_version": "marketplace_events_v1",
             "event_id": event_id,
             "event_type": "payment_completed",
             "event_timestamp": timestamp,
@@ -253,7 +276,7 @@ class OrchestrationValidationTests(unittest.TestCase):
             self.spark.createDataFrame(
                 [self.silver_row(), self.silver_row()], SILVER_VALID_SCHEMA
             ).write.parquet(str(duplicate_path))
-            with self.assertRaisesRegex(ValueError, "duplicate event_id"):
+            with self.assertRaisesRegex(ValueError, "duplicate source event grain"):
                 validate_silver_output(self.spark, duplicate_path, rejected_path)
 
     def test_gold_validation_passes_and_missing_table_fails(self) -> None:

@@ -48,7 +48,7 @@ def validate_bronze_available(spark: SparkSession, path: Path) -> int:
         spark,
         path,
         label="Bronze valid",
-        required_columns={"event_id", "event_type", "raw_json"},
+        required_columns={"business_id", "source_type", "source_id", "event_id", "event_type", "raw_json"},
     )
     row_count = frame.count()
     if row_count == 0:
@@ -67,14 +67,15 @@ def validate_silver_output(
         spark,
         valid_path,
         label="Silver valid",
-        required_columns={"event_id", "event_type", "event_timestamp", "event_date"},
+        required_columns={"business_id", "source_type", "source_id", "event_id", "event_type", "event_timestamp", "event_date"},
     )
     valid_count = valid.count()
     if valid_count == 0:
         raise ValueError("Silver valid dataset is empty")
-    duplicate = valid.groupBy("event_id").count().filter(F.col("count") > 1).take(1)
+    grain = ["business_id", "source_type", "source_id", "event_id"]
+    duplicate = valid.groupBy(*grain).count().filter(F.col("count") > 1).take(1)
     if duplicate:
-        raise ValueError(f"Silver valid contains duplicate event_id: {duplicate[0][0]}")
+        raise ValueError(f"Silver valid contains duplicate source event grain: {tuple(duplicate[0][name] for name in grain)}")
 
     rejected_count: int | None = None
     if rejected_path.exists():
@@ -92,20 +93,20 @@ def validate_gold_output(spark: SparkSession, paths) -> Mapping[str, int]:
     required = {
         "daily_sales": (
             paths.daily_sales,
-            {"completed_orders", "units_sold", "gross_revenue", "avg_order_value"},
+            {"business_id", "completed_orders", "units_sold", "gross_revenue", "avg_order_value"},
         ),
         "customer_metrics": (
             paths.customer_metrics,
-            {"customer_id", "total_units_purchased", "total_revenue"},
+            {"business_id", "customer_id", "total_units_purchased", "total_revenue"},
         ),
         "product_metrics": (
             paths.product_metrics,
-            {"product_id", "units_sold", "gross_revenue"},
+            {"business_id", "product_id", "units_sold", "gross_revenue"},
         ),
         "funnel_metrics": (
             paths.funnel_metrics,
             {
-                "event_date",
+                "business_id", "event_date",
                 "view_to_cart_rate",
                 "cart_to_checkout_rate",
                 "checkout_to_order_rate",

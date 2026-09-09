@@ -1,6 +1,7 @@
 SELECT provider,delivery_status,sum(delivery_attempts) AS delivery_attempts
 FROM monitoring_views.delivery_summary_by_provider
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND severity = {{severity}}]]

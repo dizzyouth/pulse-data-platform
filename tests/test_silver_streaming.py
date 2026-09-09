@@ -105,6 +105,23 @@ class SilverTransformationTests(unittest.TestCase):
         self.assertEqual(row.quantity, 1)
         self.assertEqual(row.unit_price, 12.5)
         self.assertEqual(str(row.event_date), "2026-01-02")
+        self.assertEqual(row.business_id, "pulse_demo_store")
+        self.assertEqual(row.source_id, "pulse_marketplace_demo")
+
+    def test_overlapping_event_ids_are_isolated_by_business(self) -> None:
+        identities = {
+            "source_type": "csv_manual", "source_id": "events_main",
+            "schema_version": "marketplace_events_v1",
+        }
+        rows = self.classify(
+            bronze_record(business_id="business_a", **identities),
+            bronze_record(business_id="business_b", **identities),
+        ).valid.collect()
+        self.assertEqual({row.business_id for row in rows}, {"business_a", "business_b"})
+
+    def test_partial_business_identity_is_rejected(self) -> None:
+        row = self.classify(bronze_record(business_id="business_a")).rejected.first()
+        self.assertIn("partial_source_identity", row.silver_validation_errors)
 
     def test_supported_event_types_match_generator_contract(self) -> None:
         self.assertEqual(set(SUPPORTED_EVENT_TYPES), {item.value for item in EventType})

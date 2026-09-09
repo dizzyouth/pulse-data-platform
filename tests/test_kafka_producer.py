@@ -48,7 +48,7 @@ class FakeProducer:
 
 
 class MarketplaceKafkaPublisherTests(unittest.TestCase):
-    def test_publishes_json_to_topic_with_customer_key(self) -> None:
+    def test_publishes_json_to_topic_with_business_customer_key(self) -> None:
         fake = FakeProducer()
         event = MarketplaceEventGenerator(seed=42).generate_journey()[0]
         publisher = MarketplaceKafkaPublisher(
@@ -60,7 +60,10 @@ class MarketplaceKafkaPublisherTests(unittest.TestCase):
         self.assertEqual(result.attempted, 1)
         self.assertEqual(result.delivered, 1)
         self.assertEqual(fake.records[0]["topic"], "marketplace.events")
-        self.assertEqual(fake.records[0]["key"], event.customer_id.encode("utf-8"))
+        self.assertEqual(
+            fake.records[0]["key"],
+            f"{event.business_id}|{event.customer_id}".encode("utf-8"),
+        )
         self.assertEqual(
             json.loads(fake.records[0]["value"].decode("utf-8")), event.to_dict()
         )

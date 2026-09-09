@@ -2,6 +2,7 @@ SELECT metric_name,count(*) AS anomaly_count,
        count(*) FILTER (WHERE severity='CRITICAL') AS critical_anomalies
 FROM monitoring_views.recent_anomalies
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND severity = {{severity}}]]

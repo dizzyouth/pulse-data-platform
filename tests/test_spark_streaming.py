@@ -178,6 +178,10 @@ class SparkStreamingTransformationTests(unittest.TestCase):
                 "quantity",
                 "unit_price",
                 "currency",
+                "business_id",
+                "source_type",
+                "source_id",
+                "schema_version",
             }.issubset(names)
         )
 
@@ -197,6 +201,7 @@ class SparkStreamingTransformationTests(unittest.TestCase):
         )
         self.assertEqual(row.kafka_timestamp, expected_local_timestamp)
         self.assertEqual(row.raw_json, json.dumps(VALID_EVENT))
+        self.assertEqual(row.business_id, "pulse_demo_store")
         self.assertIsNotNone(row.ingested_at_utc)
         self.assertEqual(
             row.ingestion_date,
@@ -236,6 +241,15 @@ class SparkStreamingTransformationTests(unittest.TestCase):
     def test_key_customer_id_mismatch_is_invalid(self) -> None:
         row = self.classify(self.record(VALID_EVENT, key=b"cus_other")).invalid.first()
         self.assertIn("kafka_key_customer_id_mismatch", row.validation_errors)
+
+    def test_explicit_business_identity_requires_composite_key(self) -> None:
+        payload = {**VALID_EVENT, "business_id": "business_a",
+                   "source_type": "csv_manual", "source_id": "events_main",
+                   "schema_version": "marketplace_events_v1"}
+        valid = self.classify(self.record(payload, key=b"business_a|cus_1")).valid.first()
+        self.assertEqual(valid.business_id, "business_a")
+        invalid = self.classify(self.record(payload, key=b"cus_1")).invalid.first()
+        self.assertIn("kafka_key_customer_id_mismatch", invalid.validation_errors)
 
     def test_streaming_writers_persist_valid_and_invalid_parquet(self) -> None:
         with TemporaryDirectory(ignore_cleanup_errors=True) as directory:

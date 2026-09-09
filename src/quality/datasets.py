@@ -8,21 +8,24 @@ from src.quality.models import (
 
 
 GOLD_GRAINS = {
-    "daily_sales": ("event_date", "country", "currency"),
-    "customer_metrics": ("customer_id",),
-    "product_metrics": ("product_id",),
-    "funnel_metrics": ("event_date", "country"),
+    "daily_sales": ("business_id", "event_date", "country", "currency"),
+    "customer_metrics": ("business_id", "customer_id"),
+    "product_metrics": ("business_id", "product_id"),
+    "funnel_metrics": ("business_id", "event_date", "country"),
 }
 
 
 def silver_rules() -> tuple[Rule, ...]:
     return (
         RowCount(check_name="row_count", min_rows=1, severity=Severity.WARNING),
-        Uniqueness(check_name="event_id_unique", columns=("event_id",)),
+        Uniqueness(
+            check_name="source_event_grain_unique",
+            columns=("business_id", "source_type", "source_id", "event_id"),
+        ),
         *(NullRatio(check_name=f"{name}_complete", column=name) for name in
-          ("event_id", "event_timestamp", "event_date", "customer_id", "session_id")),
+          ("business_id", "source_type", "source_id", "schema_version", "event_id", "event_timestamp", "event_date", "customer_id", "session_id")),
         *(Pattern(check_name=f"{name}_nonblank", column=name, pattern=r"\S") for name in
-          ("event_id", "customer_id", "session_id")),
+          ("business_id", "source_type", "source_id", "schema_version", "event_id", "customer_id", "session_id")),
         AllowedValues(check_name="event_type_allowed", column="event_type", values=SUPPORTED_EVENT_TYPES),
         # The current Silver classifier rejects zero as well as negative quantities.
         NumericBounds(check_name="quantity_positive", column="quantity", minimum=0, minimum_inclusive=False),

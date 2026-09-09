@@ -1,0 +1,11 @@
+{
+  "source_type": "csv_manual",
+  "source_id": "demo_csv",
+  "enabled": true,
+  "business_id": "pulse_demo_store",
+  "ingestion_mode": "file",
+  "schedule": "0 7 * * *",
+  "schema_version": "csv_business_events_v1",
+  "credential_ref": "PULSE_DEMO_CSV_PATH",
+  "metadata": {"format": "csv", "synthetic": true}
+}

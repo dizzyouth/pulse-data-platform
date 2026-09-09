@@ -21,6 +21,19 @@ VALID_PAYLOAD = {
     "session_id": "ses_1",
     "country": "US",
 }
+SCOPED_IDENTITY = {
+    "business_id": "business_a",
+    "source_type": "csv_manual",
+    "source_id": "events_main",
+    "schema_version": "marketplace_events_v1",
+}
+LEGACY_MAPPED_PAYLOAD = {
+    **VALID_PAYLOAD,
+    "business_id": "pulse_demo_store",
+    "source_type": "csv_manual",
+    "source_id": "pulse_marketplace_demo",
+    "schema_version": "marketplace_events_v1",
+}
 
 
 class FakeMessage:
@@ -68,7 +81,16 @@ class FakeConsumer:
 
 class MarketplaceMessageTests(unittest.TestCase):
     def test_deserializes_json_and_validates_key(self) -> None:
-        self.assertEqual(deserialize_marketplace_message(valid_message()), VALID_PAYLOAD)
+        self.assertEqual(deserialize_marketplace_message(valid_message()), LEGACY_MAPPED_PAYLOAD)
+
+    def test_deserializes_explicit_business_scoped_record(self) -> None:
+        payload = {**VALID_PAYLOAD, **SCOPED_IDENTITY}
+        message = FakeMessage(json.dumps(payload).encode("utf-8"), b"business_a|cus_1")
+        self.assertEqual(deserialize_marketplace_message(message), payload)
+
+    def test_rejects_partial_source_identity(self) -> None:
+        with self.assertRaisesRegex(MarketplaceMessageError, "partial source identity"):
+            deserialize_marketplace_message(valid_message(business_id="business_a"))
 
     def test_rejects_malformed_json(self) -> None:
         with self.assertRaisesRegex(MarketplaceMessageError, "valid UTF-8 JSON"):
@@ -117,7 +139,7 @@ class MarketplaceKafkaConsumerTests(unittest.TestCase):
         )
 
         self.assertEqual(fake.subscriptions, [["marketplace.events"]])
-        self.assertEqual(processed, [VALID_PAYLOAD])
+        self.assertEqual(processed, [LEGACY_MAPPED_PAYLOAD])
         self.assertEqual(fake.commits, [(message, False)])
         self.assertTrue(fake.closed)
         self.assertEqual((result.consumed, result.processed, result.failed), (1, 1, 0))

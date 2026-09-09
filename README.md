@@ -29,6 +29,7 @@ explicit opt-in guard and a documented reason.
 | `test_event_generator`, `test_kafka_producer`, `test_kafka_consumer` | FAST / CI-SAFE | Deterministic events, CLI subprocesses, and fake Kafka clients; no broker. |
 | `test_spark_streaming`, `test_silver_streaming`, `test_gold_build` | FAST / CI-SAFE | Real local Spark transformations, finite file streams, deduplication, and Parquet writes using temporary fixtures. No Kafka connector download or persistent lake data. |
 | `test_orchestration` | FAST / CI-SAFE | Fake Airflow DAG/operators plus real Spark dataset validation; no Airflow installation or scheduler. |
+| `test_onboarding` | FAST / CI-SAFE | Registries, structured validation, source contracts, credential references, deterministic mock adapters, CLI behavior, and isolated multi-business fixtures; no external account or network. |
 | `WarehouseContractTests` | FAST / CI-SAFE | Schema, column, and connection configuration contracts; no database. |
 | `test_dbt_project`, `test_bi_config`, `test_ci_config` | FAST / CI-SAFE | Static project/lineage, BI SQL/configuration, mocked provisioning, and CI policy checks; no Metabase or browser. |
 | `test_quality` | FAST / CI-SAFE | Typed results, reusable Spark checks, temporary Parquet CLI fixtures, and bounded snapshot reconciliation; no running services. |
@@ -52,7 +53,7 @@ is not equivalent to CI. Windows setup remains documented below.
 
 CI runs a fresh `dbt parse --no-partial-parse`, then
 `dbt compile --no-introspect --no-populate-cache` against the committed project
-and profile. The current models/macros can render all four marts and all 36 data
+and profile. The current models/macros can render all four marts and all 48 data
 tests without a database. The flags disable introspection and relation-cache
 population ([dbt compile documentation](https://docs.getdbt.com/reference/commands/compile)).
 The required profile receives dummy values with `127.0.0.1:1` as an unused
@@ -248,7 +249,7 @@ apply to nonempty datasets; intentional nulls do not become invalid values.
 
 ### Pulse dataset policies and reconciliation
 
-Silver checks event-ID uniqueness; non-null event/customer/session identifiers,
+Silver checks source/event-grain uniqueness; non-null business/source/event/customer/session identifiers,
 timestamps and dates; nonblank identifiers; allowed event types; quantity **> 0
 when present**; nonnegative optional price; and optional uppercase two-letter
 country / three-letter currency formats. Zero quantity is rejected because that
@@ -1540,9 +1541,113 @@ LLM scoring, automated root-cause analysis/remediation, holiday calendar, featur
 store, or future-data training. Persistent level shifts remain visible as repeated
 walk-forward anomalies but do not silently rewrite history. Explicit change-point
 signals, holiday/business-calendar effects, automatic regime adaptation,
-multivariate context, and calibrated statistical intervals are deferred to Phase
-5.9. Forecasts are lightweight operational heuristics, not financial forecasts or
+multivariate context, and calibrated statistical intervals are deferred to a later
+phase. Forecasts are lightweight operational heuristics, not financial forecasts or
 probabilistic guarantees.
+
+## Phase 5.9: Business onboarding and multi-source contracts
+
+Phase 5.9 adds a version-controlled onboarding control plane and business-aware
+data grains without connecting any external account. `business_id` is the stable
+lowercase identifier; a display name is metadata and is never used as a key.
+Source identity is `(business_id, source_id)`, so a source ID may repeat safely
+for different businesses. `config/businesses/` contains business JSON and
+`config/sources/` contains source JSON. The tracked `pulse_demo_store` is entirely
+synthetic and enables Shopify-like orders, Meta-Ads-like daily facts, and
+CSV/manual events.
+
+Business config records status, IANA timezone, ISO-style currency/country,
+reporting timezone, enabled source IDs, and optional nonsensitive metadata.
+Each source declares its type/ID, owner business, enabled state, ingestion mode,
+five-field cron schedule, schema version, credential reference, and optional
+metadata. A credential reference is an environment-variable *name* only; the
+registry never stores or prints a secret value. A separate runtime resolver reads
+only the named variable on explicit request and raises a sanitized error when it
+is absent. `.env.example` contains placeholders, not credentials.
+
+`src/onboarding/` separates registry loading, structured validation, source
+contracts, ingestion envelopes, local adapters, and CLI commands. Validation
+reports stable issue codes and paths for missing businesses/sources, duplicate
+per-business source IDs, missing credential references, unsupported types or
+versions, and malformed schedules, identifiers, timezones, currencies, or
+countries. Conceptual source types are `shopify`, `meta_ads`, `tiktok_ads`,
+`google_ads`, and `csv_manual`; only the three sample types have v1 contracts and
+local adapters. Unsupported versions fail closed. New or incompatible source
+fields require a new explicit contract version rather than silent coercion.
+
+The base ingestion envelope carries `business_id`, `source_type`, `source_id`,
+`ingestion_id`, `record_id`, extraction/source-update UTC timestamps,
+`schema_version`, and payload. Contracts define required/optional fields, types,
+source timestamp, currency fields, timezone expectation, and unique grain for
+`shopify_orders_v1`, `meta_ads_daily_v1`, and `csv_business_events_v1`.
+`SourceAdapter` defines `validate_config`, `extract`, `normalize`, and
+`healthcheck`. Mock adapters use UUIDv5 identities, fixed timestamps, overlapping
+sample identifiers, and no network calls.
+
+Use the local CLI from the repository root:
+
+```powershell
+python -m src.onboarding.cli list
+python -m src.onboarding.cli show pulse_demo_store
+python -m src.onboarding.cli validate pulse_demo_store
+python -m src.onboarding.cli validate-all
+python -m src.onboarding.cli source-check pulse_demo_store demo_shopify
+python -m src.onboarding.cli demo pulse_demo_store
+```
+
+`show` displays only config and reference names. `source-check` validates and
+extracts fixed local fixtures. `demo` exercises registry validation, three
+business-aware envelopes (Bronze contract), normalization (Silver contract),
+business-scoped Gold metrics, a local in-memory serving/query boundary, identity
+quality validation, and a nonpersisted anomaly evaluation. Its short history
+intentionally returns `INSUFFICIENT_HISTORY`; live PostgreSQL loading remains in
+the normal analytics DAG.
+
+Marketplace producer records include the four source identity fields and use
+`business_id|customer_id` as the Kafka key. Bronze preserves them and rejects
+partial identity, invalid IDs, unsupported marketplace versions, or a mismatched
+key. Silver preserves identity and deduplicates on
+`(business_id, source_type, source_id, event_id)`. Gold grains are:
+
+| Output | Grain |
+| --- | --- |
+| `daily_sales` | business, UTC event date, country, currency |
+| `customer_metrics` | business, customer |
+| `product_metrics` | business, product |
+| `funnel_metrics` | business, UTC event date, country |
+
+PostgreSQL adds non-null `business_id` to every analytics output and indexes it.
+dbt source/mart tests use composite uniqueness, revenue groups by business and
+currency, and customer/product rankings partition by business. Marketplace BI
+queries retain a business column and one Business filter replaces per-business
+dashboard copies.
+
+Anomaly source queries group analytics history by business and persist
+`business_id`; source type/ID remain available on Silver records where attribution
+is exact. Alert and delivery context remains in existing JSONB. Monitoring views
+project business identity as a typed read-only column, and Pulse Platform Health
+maps its Business filter only to compatible anomaly/alert/delivery cards.
+Dataset-level quality runs still describe the whole pipeline snapshot and are not
+falsely attributed to one business; per-business quality execution is deferred.
+
+Backward compatibility is explicit. A record with none of the four identity
+fields maps to `pulse_demo_store` / `csv_manual` /
+`pulse_marketplace_demo` / `marketplace_events_v1`. A partially populated identity
+is rejected. New producer records are explicit, and legacy Gold input receives
+only that same demo business. Unknown history cannot silently mix with a newly
+onboarded business.
+
+The manual `pulse_business_onboarding` DAG discovers active/enabled configs at
+import and creates one stable local check task per source after registry
+validation. It does not hardcode a DAG per business or call external systems.
+Source schedules are validated future-connector metadata, not separate production
+schedules in this phase.
+
+This is contract-level tenancy, not production multi-tenancy. Phase 5.9 adds no
+real Shopify/Meta/TikTok API, OAuth, production secret manager, RLS/RBAC/SSO,
+customer UI, billing, connector cursor/backfill state, distributed ingestion
+queue, or tenant deployment isolation. Those connector, credential,
+access-control, and operational concerns are intentionally deferred to Phase 6.0.
 
 ## Airflow orchestration
 
@@ -1571,8 +1676,8 @@ check_bronze_available
 
 `build_silver` uses the explicit `--orchestrated-snapshot` mode. It reads the
 current Bronze valid dataset as a finite snapshot, reuses the existing Silver
-normalization and quality classification, deterministically deduplicates by
-`event_id`, and replaces Silver valid/rejected outputs. The existing default
+normalization and quality classification, deterministically deduplicates by the
+business/source/event grain, and replaces Silver valid/rejected outputs. The existing default
 available-now streaming mode and `--continuous` mode remain available for
 standalone use. The orchestration snapshot intentionally does not reuse
 host-created streaming checkpoints because checkpoint file URIs are not
@@ -1599,7 +1704,7 @@ Trigger the workflow in the UI or from the scheduler container:
 docker compose exec airflow-scheduler airflow dags trigger pulse_analytics_pipeline
 ```
 
-The Airflow containers mount `airflow/dags`, `src`, `dbt`, and `data`. Project-relative
+The Airflow containers mount `airflow/dags`, `src`, `dbt`, `config`, and `data`. Project-relative
 host data is exposed as `/opt/pulse/data`; source is exposed read-only at
 `/opt/pulse/src`, and the dbt project is exposed read-only at `/opt/pulse/dbt`.
 Airflow logs, Airflow metadata, warehouse data, and Metabase metadata use

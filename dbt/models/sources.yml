@@ -6,8 +6,13 @@ sources:
     schema: analytics
     tables:
       - name: daily_sales
-        description: "Daily paid-order measures at event date, country, and currency grain; revenue is gross and refunds are not netted."
+        description: "Daily paid-order measures at business, event date, country, and currency grain; revenue is gross and refunds are not netted."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, event_date, country, currency]
         columns:
+          - name: business_id
+            data_tests: [not_null]
           - name: event_date
             description: "UTC calendar date of the payment events."
             data_tests: [not_null]
@@ -21,26 +26,41 @@ sources:
             description: "Gross payment revenue in the row's currency, before refunds or currency conversion."
             data_tests: [not_null, nonnegative]
       - name: customer_metrics
-        description: "Lifetime-to-date event and paid-commerce measures at customer grain."
+        description: "Lifetime-to-date event and paid-commerce measures at business/customer grain."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, customer_id]
         columns:
+          - name: business_id
+            data_tests: [not_null]
           - name: customer_id
             description: "Stable marketplace customer identifier."
-            data_tests: [not_null, unique]
+            data_tests: [not_null]
           - name: total_revenue
             description: "Customer gross paid revenue without refund netting or currency conversion."
             data_tests: [not_null, nonnegative]
       - name: product_metrics
-        description: "Lifetime-to-date activity and paid-commerce measures at product grain."
+        description: "Lifetime-to-date activity and paid-commerce measures at business/product grain."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, product_id]
         columns:
+          - name: business_id
+            data_tests: [not_null]
           - name: product_id
             description: "Stable marketplace product identifier."
-            data_tests: [not_null, unique]
+            data_tests: [not_null]
           - name: gross_revenue
             description: "Product gross paid revenue without refund netting or currency conversion."
             data_tests: [not_null, nonnegative]
       - name: funnel_metrics
-        description: "Daily country-level event-count funnel stages and adjacent-stage conversion rates."
+        description: "Business-scoped daily country funnel stages and adjacent-stage conversion rates."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, event_date, country]
         columns:
+          - name: business_id
+            data_tests: [not_null]
           - name: event_date
             description: "UTC calendar date of the funnel events."
             data_tests: [not_null]

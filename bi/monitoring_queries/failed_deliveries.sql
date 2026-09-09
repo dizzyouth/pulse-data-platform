@@ -1,8 +1,9 @@
-SELECT attempted_at_utc,completed_at_utc,provider,destination_key,delivery_kind,
+SELECT attempted_at_utc,completed_at_utc,business_id,provider,destination_key,delivery_kind,
        attempt_number,severity,lifecycle_status,dataset_name,layer,title,error_message,
        delivery_id,alert_event_id
 FROM monitoring_views.failed_deliveries
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND severity = {{severity}}]]

@@ -45,6 +45,7 @@ SPECS = (
     ("recent_contextual_anomalies", "Recent contextual anomalies (latest 100)", "table", {}),
 )
 FILTERS = {"layer": "Layer", "dataset": "Dataset", "status": "Run status",
+           "business": "Business",
            "lifecycle_status": "Lifecycle status",
            "severity": "Severity", "delivery_status": "Delivery status", "provider": "Provider",
            "baseline_strategy": "Baseline strategy", "confidence": "Baseline confidence",

@@ -3,6 +3,7 @@ SELECT severity,count(*) AS alert_count,
        count(*) FILTER (WHERE source_type='ANOMALY') AS anomaly_alerts
 FROM monitoring_views.recent_alert_events
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND lifecycle_status = {{lifecycle_status}}]]

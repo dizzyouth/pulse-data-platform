@@ -1,4 +1,5 @@
 select
+    business_id,
     event_date,
     country,
     product_views,

@@ -69,6 +69,10 @@ class MetabaseConfigurationTests(unittest.TestCase):
             ).lower()
             self.assertIn("currency", query)
 
+    def test_every_marketplace_query_preserves_business_context(self) -> None:
+        for path in (PROJECT_ROOT / "bi" / "queries").glob("*.sql"):
+            self.assertIn("business_id", path.read_text(encoding="utf-8").lower(), path.name)
+
     def test_lifetime_rankings_do_not_expose_mixed_currency_money(self) -> None:
         for name in ("top_customers.sql", "top_products.sql"):
             query = (PROJECT_ROOT / "bi" / "queries" / name).read_text().lower()

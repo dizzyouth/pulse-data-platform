@@ -1,0 +1,11 @@
+{
+  "source_type": "meta_ads",
+  "source_id": "demo_meta_ads",
+  "enabled": true,
+  "business_id": "pulse_demo_store",
+  "ingestion_mode": "batch",
+  "schedule": "30 6 * * *",
+  "schema_version": "meta_ads_daily_v1",
+  "credential_ref": "PULSE_DEMO_META_ADS_TOKEN",
+  "metadata": {"account_alias": "synthetic-demo", "synthetic": true}
+}

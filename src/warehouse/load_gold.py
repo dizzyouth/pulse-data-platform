@@ -13,6 +13,7 @@ import psycopg
 from psycopg import sql
 
 from src.analytics.gold_build import GoldPaths, build_gold_spark_session, load_gold_paths
+from src.onboarding import DEFAULT_BUSINESS_ID
 from src.utils.parquet import read_parquet_data_files
 
 WAREHOUSE_SCHEMA = "analytics"
@@ -42,7 +43,7 @@ TABLE_SPECS = (
     TableSpec(
         "daily_sales",
         (
-            ColumnSpec("event_date", "DATE"), ColumnSpec("country", "TEXT"),
+            ColumnSpec("business_id", "TEXT"), ColumnSpec("event_date", "DATE"), ColumnSpec("country", "TEXT"),
             ColumnSpec("currency", "TEXT"), ColumnSpec("completed_orders", "BIGINT"),
             ColumnSpec("units_sold", "BIGINT"), ColumnSpec("gross_revenue", "DOUBLE PRECISION"),
             ColumnSpec("avg_order_value", "DOUBLE PRECISION", True),
@@ -52,7 +53,7 @@ TABLE_SPECS = (
     TableSpec(
         "customer_metrics",
         (
-            ColumnSpec("customer_id", "TEXT"), ColumnSpec("first_event_at", "TIMESTAMP WITH TIME ZONE"),
+            ColumnSpec("business_id", "TEXT"), ColumnSpec("customer_id", "TEXT"), ColumnSpec("first_event_at", "TIMESTAMP WITH TIME ZONE"),
             ColumnSpec("last_event_at", "TIMESTAMP WITH TIME ZONE"), ColumnSpec("products_viewed", "BIGINT"),
             ColumnSpec("cart_adds", "BIGINT"), ColumnSpec("checkouts_started", "BIGINT"),
             ColumnSpec("orders_created", "BIGINT"), ColumnSpec("payments_completed", "BIGINT"),
@@ -66,7 +67,7 @@ TABLE_SPECS = (
     TableSpec(
         "product_metrics",
         (
-            ColumnSpec("product_id", "TEXT"), ColumnSpec("seller_id", "TEXT", True),
+            ColumnSpec("business_id", "TEXT"), ColumnSpec("product_id", "TEXT"), ColumnSpec("seller_id", "TEXT", True),
             ColumnSpec("views", "BIGINT"), ColumnSpec("cart_adds", "BIGINT"),
             ColumnSpec("orders_created", "BIGINT"), ColumnSpec("payments_completed", "BIGINT"),
             ColumnSpec("units_sold", "BIGINT"), ColumnSpec("gross_revenue", "DOUBLE PRECISION"),
@@ -77,7 +78,7 @@ TABLE_SPECS = (
     TableSpec(
         "funnel_metrics",
         (
-            ColumnSpec("event_date", "DATE"), ColumnSpec("country", "TEXT"),
+            ColumnSpec("business_id", "TEXT"), ColumnSpec("event_date", "DATE"), ColumnSpec("country", "TEXT"),
             ColumnSpec("product_views", "BIGINT"), ColumnSpec("cart_adds", "BIGINT"),
             ColumnSpec("checkouts_started", "BIGINT"), ColumnSpec("orders_created", "BIGINT"),
             ColumnSpec("payments_completed", "BIGINT"), ColumnSpec("orders_delivered", "BIGINT"),
@@ -187,11 +188,25 @@ def load_gold_to_warehouse(paths: GoldPaths | None = None) -> dict[str, int]:
                             sql.Identifier(f"idx_{spec.name}_{spec.index_column}"), sql.Identifier(WAREHOUSE_SCHEMA),
                             sql.Identifier(spec.name), sql.Identifier(spec.index_column),
                         ))
+                        cursor.execute(sql.SQL("CREATE INDEX {} ON {}.{} ({})").format(
+                            sql.Identifier(f"idx_{spec.name}_business_id"), sql.Identifier(WAREHOUSE_SCHEMA),
+                            sql.Identifier(spec.name), sql.Identifier("business_id"),
+                        ))
                     else:
                         target = sql.SQL("{}.{}").format(
                             sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(spec.name)
                         )
                         columns = sql.SQL(", ").join(map(sql.Identifier, spec.required_columns))
+                        cursor.execute(
+                            sql.SQL(
+                                "ALTER TABLE {} ADD COLUMN IF NOT EXISTS "
+                                "business_id TEXT NOT NULL DEFAULT {}"
+                            ).format(target, sql.Literal(DEFAULT_BUSINESS_ID))
+                        )
+                        cursor.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} ({})").format(
+                            sql.Identifier(f"idx_{spec.name}_business_id"), target,
+                            sql.Identifier("business_id"),
+                        ))
                         cursor.execute(sql.SQL("TRUNCATE TABLE {}").format(target))
                         cursor.execute(sql.SQL("INSERT INTO {} ({}) SELECT {} FROM {}.{}").format(
                             target, columns, columns, sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(staging)

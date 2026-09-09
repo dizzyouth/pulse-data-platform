@@ -29,6 +29,13 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
+from src.onboarding import (
+    DEFAULT_BUSINESS_ID,
+    DEFAULT_MARKETPLACE_SCHEMA_VERSION,
+    DEFAULT_SOURCE_ID,
+    DEFAULT_SOURCE_TYPE,
+)
+
 SPARK_VERSION = "4.2.0"
 KAFKA_CONNECTOR_PACKAGE = (
     "org.apache.spark:spark-sql-kafka-0-10_2.13:4.2.0"
@@ -49,6 +56,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 MARKETPLACE_EVENT_SCHEMA = StructType(
     [
+        StructField("business_id", StringType(), True),
+        StructField("source_type", StringType(), True),
+        StructField("source_id", StringType(), True),
+        StructField("schema_version", StringType(), True),
         StructField("event_id", StringType(), True),
         StructField("event_type", StringType(), True),
         StructField("event_timestamp", TimestampType(), True),
@@ -208,6 +219,18 @@ def classify_marketplace_events(
         ),
     )
 
+    identity_count = sum(
+        (F.col(f"parsed.{name}").isNotNull()).cast("integer")
+        for name in ("business_id", "source_type", "source_id", "schema_version")
+    )
+    legacy_record = identity_count == 0
+    partial_identity = (identity_count > 0) & (identity_count < 4)
+    expected_key = F.when(
+        legacy_record, F.col("parsed.customer_id")
+    ).otherwise(
+        F.concat_ws("|", F.col("parsed.business_id"), F.col("parsed.customer_id"))
+    )
+
     missing_or_mismatched = F.array_compact(
         F.array(
             F.when(F.col("parsed.event_id").isNull(), F.lit("missing_event_id")),
@@ -223,9 +246,30 @@ def classify_marketplace_events(
                 F.col("kafka_key").isNull()
                 | (
                     F.col("parsed.customer_id").isNotNull()
-                    & (F.col("kafka_key") != F.col("parsed.customer_id"))
+                    & (F.col("kafka_key") != expected_key)
                 ),
                 F.lit("kafka_key_customer_id_mismatch"),
+            ),
+            F.when(partial_identity, F.lit("partial_source_identity")),
+            F.when(
+                ~legacy_record
+                & ~F.col("parsed.business_id").rlike("^[a-z0-9][a-z0-9_-]{2,63}$"),
+                F.lit("invalid_business_id"),
+            ),
+            F.when(
+                ~legacy_record
+                & ~F.col("parsed.source_type").rlike("^[a-z0-9][a-z0-9_-]{2,63}$"),
+                F.lit("invalid_source_type"),
+            ),
+            F.when(
+                ~legacy_record
+                & ~F.col("parsed.source_id").rlike("^[a-z0-9][a-z0-9_-]{2,63}$"),
+                F.lit("invalid_source_id"),
+            ),
+            F.when(
+                ~legacy_record
+                & (F.col("parsed.schema_version") != DEFAULT_MARKETPLACE_SCHEMA_VERSION),
+                F.lit("unsupported_schema_version"),
             ),
         )
     )
@@ -234,8 +278,20 @@ def classify_marketplace_events(
         F.array(F.lit("malformed_json")),
     ).otherwise(missing_or_mismatched)
 
+    legacy_defaults = {
+        "business_id": DEFAULT_BUSINESS_ID,
+        "source_type": DEFAULT_SOURCE_TYPE,
+        "source_id": DEFAULT_SOURCE_ID,
+        "schema_version": DEFAULT_MARKETPLACE_SCHEMA_VERSION,
+    }
     event_columns = [
-        F.col(f"parsed.{field.name}").alias(field.name)
+        (
+            F.when(legacy_record, F.lit(legacy_defaults[field.name]))
+            .otherwise(F.col(f"parsed.{field.name}"))
+            .alias(field.name)
+            if field.name in legacy_defaults
+            else F.col(f"parsed.{field.name}").alias(field.name)
+        )
         for field in MARKETPLACE_EVENT_SCHEMA.fields
     ]
     classified = decoded.select(

@@ -1,4 +1,5 @@
 select
+    business_id,
     event_date,
     currency,
     sum(completed_orders)::bigint as completed_orders,
@@ -8,4 +9,4 @@ select
         sum(gross_revenue) / nullif(sum(completed_orders), 0)
     )::double precision as avg_order_value
 from {{ source('analytics', 'daily_sales') }}
-group by event_date, currency
+group by business_id, event_date, currency

@@ -1,7 +1,8 @@
-SELECT observed_at_utc,dataset_name,layer,metric_name,dimensions,severity,current_value,
+SELECT observed_at_utc,business_id,dataset_name,layer,metric_name,dimensions,severity,current_value,
        baseline_value,deviation_value,deviation_percent,method,history_count,explanation
 FROM monitoring_views.recent_anomalies
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND severity = {{severity}}]]

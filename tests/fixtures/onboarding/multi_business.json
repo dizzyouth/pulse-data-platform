@@ -1,0 +1,15 @@
+{
+  "businesses": ["business_a", "business_b"],
+  "sources": [
+    {"business_id": "business_a", "source_type": "shopify", "source_id": "orders", "schema_version": "shopify_orders_v1"},
+    {"business_id": "business_a", "source_type": "meta_ads", "source_id": "ads", "schema_version": "meta_ads_daily_v1"},
+    {"business_id": "business_b", "source_type": "shopify", "source_id": "orders", "schema_version": "shopify_orders_v1"},
+    {"business_id": "business_b", "source_type": "meta_ads", "source_id": "ads", "schema_version": "meta_ads_daily_v1"}
+  ],
+  "overlapping_identifiers": {
+    "order_id": "ord_shared",
+    "customer_id": "cus_shared",
+    "product_id": "prd_shared",
+    "campaign_id": "cmp_shared"
+  }
+}

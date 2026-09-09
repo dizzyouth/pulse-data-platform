@@ -1,0 +1,11 @@
+{
+  "business_id": "pulse_demo_store",
+  "business_name": "Pulse Demo Store",
+  "status": "ACTIVE",
+  "timezone": "America/New_York",
+  "currency": "USD",
+  "country": "US",
+  "enabled_sources": ["demo_shopify", "demo_meta_ads", "demo_csv"],
+  "reporting_timezone": "America/New_York",
+  "metadata": {"synthetic": true, "purpose": "Phase 5.9 local validation"}
+}

@@ -80,13 +80,15 @@ CREATE OR REPLACE VIEW monitoring_views.recent_anomalies AS
 SELECT anomaly_id,evaluation_id,metric_name,dataset_name,layer,dimensions,current_value,
        baseline_value,deviation_value,deviation_percent,threshold,method,status,severity,
        observed_at_utc,evaluated_at_utc,history_count,explanation,execution_source,
-       execution_id,dag_id,airflow_run_id,task_id,attempt_number,map_index,logical_date_utc,details
+       execution_id,dag_id,airflow_run_id,task_id,attempt_number,map_index,logical_date_utc,details,
+       dimensions->>'business_id' AS business_id
 FROM monitoring.anomaly_results
 WHERE status = 'ANOMALY'
 OFFSET 0;
 
 CREATE OR REPLACE VIEW monitoring_views.recent_alert_events AS
-SELECT * FROM monitoring.alert_events
+SELECT a.*,a.details->'dimensions'->>'business_id' AS business_id
+FROM monitoring.alert_events a
 OFFSET 0;
 
 -- Grain: one metric/dataset/layer/dimension series across persisted evaluations.
@@ -114,7 +116,8 @@ SELECT anomaly_id,evaluation_id,metric_name,dataset_name,layer,dimensions,severi
        coalesce((details->>'training_window_size')::integer,history_count) AS training_window_size,
        (details->>'model_error')::double precision AS model_error,
        coalesce((details->>'fallback_used')::boolean,false) AS fallback_used,
-       coalesce(details->>'confidence','LOW') AS confidence,explanation
+       coalesce(details->>'confidence','LOW') AS confidence,explanation,
+       dimensions->>'business_id' AS business_id
 FROM monitoring.anomaly_results
 OFFSET 0;
 
@@ -123,26 +126,26 @@ CREATE OR REPLACE VIEW monitoring_views.anomalies_by_strategy AS
 SELECT baseline_strategy,dataset_name,layer,severity,status,
        (observed_at_utc AT TIME ZONE 'UTC')::date AS observed_date_utc,
        count(*) AS evaluation_count,
-       count(*) FILTER (WHERE status='ANOMALY') AS anomaly_count
+       count(*) FILTER (WHERE status='ANOMALY') AS anomaly_count,business_id
 FROM monitoring_views.anomaly_baseline_history
-GROUP BY baseline_strategy,dataset_name,layer,severity,status,
+GROUP BY baseline_strategy,dataset_name,layer,severity,status,business_id,
          (observed_at_utc AT TIME ZONE 'UTC')::date;
 
 CREATE OR REPLACE VIEW monitoring_views.anomaly_confidence_summary AS
 SELECT confidence,baseline_strategy,dataset_name,layer,severity,status,
        (observed_at_utc AT TIME ZONE 'UTC')::date AS observed_date_utc,
        count(*) AS evaluation_count,
-       count(*) FILTER (WHERE status='ANOMALY') AS anomaly_count
+       count(*) FILTER (WHERE status='ANOMALY') AS anomaly_count,business_id
 FROM monitoring_views.anomaly_baseline_history
-GROUP BY confidence,baseline_strategy,dataset_name,layer,severity,status,
+GROUP BY confidence,baseline_strategy,dataset_name,layer,severity,status,business_id,
          (observed_at_utc AT TIME ZONE 'UTC')::date;
 
 CREATE OR REPLACE VIEW monitoring_views.baseline_fallback_summary AS
 SELECT fallback_used,baseline_strategy,dataset_name,layer,severity,status,
        (observed_at_utc AT TIME ZONE 'UTC')::date AS observed_date_utc,
-       count(*) AS evaluation_count
+       count(*) AS evaluation_count,business_id
 FROM monitoring_views.anomaly_baseline_history
-GROUP BY fallback_used,baseline_strategy,dataset_name,layer,severity,status,
+GROUP BY fallback_used,baseline_strategy,dataset_name,layer,severity,status,business_id,
          (observed_at_utc AT TIME ZONE 'UTC')::date;
 
 -- Grain: alert source/severity/status. Severity says urgency and status says lifecycle.
@@ -157,7 +160,8 @@ SELECT a.*,
        extract(epoch FROM (coalesce(resolved_at_utc,now())-first_seen_at_utc)) AS duration_seconds,
        (first_seen_at_utc AT TIME ZONE 'UTC')::date AS first_seen_date_utc,
        (last_seen_at_utc AT TIME ZONE 'UTC')::date AS last_seen_date_utc,
-       (resolved_at_utc AT TIME ZONE 'UTC')::date AS resolved_date_utc
+       (resolved_at_utc AT TIME ZONE 'UTC')::date AS resolved_date_utc,
+       a.details->'dimensions'->>'business_id' AS business_id
 FROM monitoring.alert_events a OFFSET 0;
 
 CREATE OR REPLACE VIEW monitoring_views.active_alerts AS
@@ -167,8 +171,10 @@ WHERE lifecycle_status IN ('OPEN','ACKNOWLEDGED') OFFSET 0;
 CREATE OR REPLACE VIEW monitoring_views.alert_summary_by_status AS
 SELECT lifecycle_status,source_type,severity,dataset_name,layer,count(*) AS alert_count,
        sum(occurrence_count) AS occurrence_count,min(first_seen_at_utc) AS first_seen_at_utc,
-       max(last_seen_at_utc) AS last_seen_at_utc
-FROM monitoring.alert_events GROUP BY lifecycle_status,source_type,severity,dataset_name,layer;
+       max(last_seen_at_utc) AS last_seen_at_utc,
+       details->'dimensions'->>'business_id' AS business_id
+FROM monitoring.alert_events GROUP BY lifecycle_status,source_type,severity,dataset_name,layer,
+       details->'dimensions'->>'business_id';
 
 CREATE OR REPLACE VIEW monitoring_views.recurring_alerts AS
 SELECT * FROM monitoring_views.alert_history WHERE occurrence_count>1 OFFSET 0;
@@ -180,7 +186,8 @@ SELECT d.delivery_id,d.alert_event_id,d.logical_delivery_key,d.provider,d.destin
        d.attempted_at_utc,d.completed_at_utc,d.attempt_number,d.external_reference,
        d.error_message,d.details AS delivery_details,a.source_type,a.dataset_name,a.layer,
        a.severity,a.lifecycle_status,a.title,a.first_seen_at_utc,a.last_seen_at_utc,
-       a.occurrence_count,(d.attempted_at_utc AT TIME ZONE 'UTC')::date AS attempted_date_utc
+       a.occurrence_count,(d.attempted_at_utc AT TIME ZONE 'UTC')::date AS attempted_date_utc,
+       a.details->'dimensions'->>'business_id' AS business_id
 FROM monitoring.alert_deliveries d
 JOIN monitoring.alert_events a USING (alert_event_id)
 OFFSET 0;
@@ -194,9 +201,9 @@ WHERE delivery_status='FAILED' OFFSET 0;
 CREATE OR REPLACE VIEW monitoring_views.delivery_summary_by_provider AS
 SELECT provider,destination_key,delivery_status,delivery_kind,dataset_name,layer,
        severity,lifecycle_status,attempted_date_utc,count(*) AS delivery_attempts,
-       max(attempted_at_utc) AS latest_attempt_at_utc
+       max(attempted_at_utc) AS latest_attempt_at_utc,business_id
 FROM monitoring_views.recent_deliveries
-GROUP BY provider,destination_key,delivery_status,delivery_kind,dataset_name,layer,
+GROUP BY provider,destination_key,delivery_status,delivery_kind,dataset_name,layer,business_id,
          severity,lifecycle_status,attempted_date_utc;
 
 -- One active alert/provider pair with a successfully delivered escalation.
@@ -204,13 +211,14 @@ CREATE OR REPLACE VIEW monitoring_views.escalation_summary AS
 SELECT a.alert_event_id,a.lifecycle_status,a.severity,a.dataset_name,a.layer,a.title,
        a.first_seen_at_utc,a.last_seen_at_utc,a.occurrence_count,d.provider,d.destination_key,
        max(d.escalation_level) AS escalation_level,max(d.completed_at_utc) AS escalated_at_utc,
-       count(*) AS escalation_deliveries
+       count(*) AS escalation_deliveries,a.details->'dimensions'->>'business_id' AS business_id
 FROM monitoring.alert_events a
 JOIN monitoring.alert_deliveries d USING (alert_event_id)
 WHERE a.status IN ('OPEN','ACKNOWLEDGED') AND d.delivery_kind='ESCALATION'
   AND d.delivery_status='SENT'
 GROUP BY a.alert_event_id,a.lifecycle_status,a.severity,a.dataset_name,a.layer,a.title,
-         a.first_seen_at_utc,a.last_seen_at_utc,a.occurrence_count,d.provider,d.destination_key;
+         a.first_seen_at_utc,a.last_seen_at_utc,a.occurrence_count,d.provider,d.destination_key,
+         a.details->'dimensions'->>'business_id';
 
 -- Session callers may set pulse.monitoring_retention_days. Metabase and ordinary
 -- SQL sessions receive the documented conservative 90-day default.

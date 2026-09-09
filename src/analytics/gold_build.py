@@ -15,6 +15,7 @@ from src.streaming.windows_spark import (
     configure_windows_spark_builder,
     configure_windows_spark_environment,
 )
+from src.onboarding import DEFAULT_BUSINESS_ID
 from src.utils.parquet import read_parquet_data_files
 
 # Configure the Windows process before PySpark can launch its JVM.
@@ -45,6 +46,10 @@ GOLD_OUTPUT_CLEANUP_DELAY_SECONDS = 0.1
 
 SILVER_VALID_SCHEMA = StructType(
     [
+        StructField("business_id", StringType(), True),
+        StructField("source_type", StringType(), True),
+        StructField("source_id", StringType(), True),
+        StructField("schema_version", StringType(), True),
         StructField("event_id", StringType(), True),
         StructField("event_type", StringType(), True),
         StructField("event_timestamp", TimestampType(), True),
@@ -219,7 +224,7 @@ def build_daily_sales(silver_valid: DataFrame) -> DataFrame:
 
     daily = (
         silver_valid.filter(F.col("event_type") == "payment_completed")
-        .groupBy("event_date", "country", "currency")
+        .groupBy("business_id", "event_date", "country", "currency")
         .agg(
             F.countDistinct("order_id").cast("long").alias("completed_orders"),
             F.coalesce(F.sum(_payment_units()), F.lit(0)).cast("long").alias(
@@ -242,7 +247,7 @@ def build_daily_sales(silver_valid: DataFrame) -> DataFrame:
 def build_customer_metrics(silver_valid: DataFrame) -> DataFrame:
     """Build one lifetime-to-date metrics row per customer."""
 
-    return silver_valid.groupBy("customer_id").agg(
+    return silver_valid.groupBy("business_id", "customer_id").agg(
         F.min("event_timestamp").alias("first_event_at"),
         F.max("event_timestamp").alias("last_event_at"),
         _event_count("product_viewed").alias("products_viewed"),
@@ -271,7 +276,7 @@ def build_product_metrics(silver_valid: DataFrame) -> DataFrame:
 
     metrics = (
         silver_valid.filter(F.col("product_id").isNotNull())
-        .groupBy("product_id")
+        .groupBy("business_id", "product_id")
         .agg(
             F.collect_set("seller_id").alias("_seller_ids"),
             _event_count("product_viewed").alias("views"),
@@ -294,6 +299,7 @@ def build_product_metrics(silver_valid: DataFrame) -> DataFrame:
         )
     )
     return metrics.select(
+        "business_id",
         "product_id",
         "seller_id",
         "views",
@@ -316,7 +322,7 @@ def _safe_rate(numerator: str, denominator: str) -> Column:
 def build_funnel_metrics(silver_valid: DataFrame) -> DataFrame:
     """Aggregate event-count funnel stages by UTC event date and country."""
 
-    funnel = silver_valid.groupBy("event_date", "country").agg(
+    funnel = silver_valid.groupBy("business_id", "event_date", "country").agg(
         _event_count("product_viewed").alias("product_views"),
         _event_count("product_added_to_cart").alias("cart_adds"),
         _event_count("checkout_started").alias("checkouts_started"),
@@ -344,11 +350,14 @@ def build_funnel_metrics(silver_valid: DataFrame) -> DataFrame:
 def build_gold_tables(silver_valid: DataFrame) -> GoldTables:
     """Build all Gold tables from the same Silver valid snapshot."""
 
+    scoped = silver_valid.withColumn(
+        "business_id", F.coalesce(F.col("business_id"), F.lit(DEFAULT_BUSINESS_ID))
+    )
     return GoldTables(
-        daily_sales=build_daily_sales(silver_valid),
-        customer_metrics=build_customer_metrics(silver_valid),
-        product_metrics=build_product_metrics(silver_valid),
-        funnel_metrics=build_funnel_metrics(silver_valid),
+        daily_sales=build_daily_sales(scoped),
+        customer_metrics=build_customer_metrics(scoped),
+        product_metrics=build_product_metrics(scoped),
+        funnel_metrics=build_funnel_metrics(scoped),
     )
 
 

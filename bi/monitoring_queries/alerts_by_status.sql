@@ -1,6 +1,7 @@
 SELECT lifecycle_status, count(*) AS alert_count
 FROM monitoring_views.alert_history
 WHERE 1=1
+[[AND business_id = {{business}}]]
 [[AND layer = {{layer}}]]
 [[AND dataset_name = {{dataset}}]]
 [[AND severity = {{severity}}]]

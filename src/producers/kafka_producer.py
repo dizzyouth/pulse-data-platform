@@ -55,9 +55,8 @@ class KafkaPublishingError(RuntimeError):
 class MarketplaceKafkaPublisher:
     """Kafka transport adapter for marketplace events.
 
-    Records use ``customer_id`` as their key so Kafka consistently assigns a
-    customer's events to the same partition, preserving per-customer ordering
-    within that partition.
+    Records use ``business_id|customer_id`` as their key so identifiers that
+    overlap across businesses cannot share an ordering key accidentally.
     """
 
     def __init__(
@@ -104,7 +103,7 @@ class MarketplaceKafkaPublisher:
                 value = json.dumps(
                     event.to_dict(), separators=(",", ":"), ensure_ascii=False
                 ).encode("utf-8")
-                key = event.customer_id.encode("utf-8")
+                key = f"{event.business_id}|{event.customer_id}".encode("utf-8")
                 while True:
                     try:
                         self._producer.produce(

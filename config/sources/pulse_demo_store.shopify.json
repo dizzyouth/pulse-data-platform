@@ -1,0 +1,11 @@
+{
+  "source_type": "shopify",
+  "source_id": "demo_shopify",
+  "enabled": true,
+  "business_id": "pulse_demo_store",
+  "ingestion_mode": "batch",
+  "schedule": "15 * * * *",
+  "schema_version": "shopify_orders_v1",
+  "credential_ref": "PULSE_DEMO_SHOPIFY_TOKEN",
+  "metadata": {"shop_domain": "demo-store.invalid", "synthetic": true}
+}

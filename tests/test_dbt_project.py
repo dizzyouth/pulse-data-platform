@@ -65,12 +65,27 @@ class DbtProjectContractTests(unittest.TestCase):
             self.assertIn(f"source('analytics', '{source}')", sql)
         self.assertNotIn("ref(", sql)
 
-    def test_revenue_mart_preserves_currency_grain(self) -> None:
+    def test_revenue_mart_preserves_business_and_currency_grain(self) -> None:
         sql = (DBT_ROOT / "models" / "marts" / "revenue_by_day.sql").read_text(
             encoding="utf-8"
         ).lower()
         self.assertIn("currency", sql)
-        self.assertIn("group by event_date, currency", sql)
+        self.assertIn("group by business_id, event_date, currency", sql)
+
+    def test_sources_and_marts_enforce_business_aware_grains(self) -> None:
+        for relative in ("models/sources.yml", "models/marts/marts.yml"):
+            config = yaml.safe_load((DBT_ROOT / relative).read_text(encoding="utf-8"))
+            entries = config["sources"][0]["tables"] if "sources" in config else config["models"]
+            for entry in entries:
+                columns = {column["name"]: column for column in entry["columns"]}
+                self.assertIn("business_id", columns)
+                self.assertIn("not_null", columns["business_id"]["data_tests"])
+                self.assertIn("unique_combination", entry["data_tests"][0])
+
+    def test_business_rankings_are_partitioned(self) -> None:
+        for name in ("top_customers.sql", "top_products.sql"):
+            sql = (DBT_ROOT / "models" / "marts" / name).read_text().lower()
+            self.assertIn("partition by business_id", sql)
 
 
 if __name__ == "__main__":

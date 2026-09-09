@@ -41,10 +41,13 @@ x-airflow-common: &airflow-common
     DBT_PROFILES_DIR: /opt/pulse/dbt
     DBT_TARGET_PATH: /tmp/pulse-dbt-target
     DBT_LOG_PATH: /tmp/pulse-dbt-logs
+    PULSE_BUSINESSES_DIR: /opt/pulse/config/businesses
+    PULSE_SOURCES_DIR: /opt/pulse/config/sources
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
     - ./src:/opt/pulse/src:ro
     - ./dbt:/opt/pulse/dbt:ro
+    - ./config:/opt/pulse/config:ro
     - ./data:/opt/pulse/data
     - airflow-logs:/opt/airflow/logs
   depends_on:

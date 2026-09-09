@@ -48,9 +48,16 @@ def silver_event(
     unit_price: float | None = None,
     currency: str = "USD",
     offset: int = 1,
+    business_id: str = "pulse_demo_store",
+    source_type: str = "csv_manual",
+    source_id: str = "pulse_marketplace_demo",
 ):
     event_timestamp = timestamp or datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
     return {
+        "business_id": business_id,
+        "source_type": source_type,
+        "source_id": source_id,
+        "schema_version": "marketplace_events_v1",
         "event_id": event_id,
         "event_type": event_type,
         "event_timestamp": event_timestamp,
@@ -212,6 +219,27 @@ class GoldAggregationTests(unittest.TestCase):
         self.assertEqual(row.gross_revenue, 0.0)
         self.assertEqual(row.avg_order_value, 0.0)
 
+    def test_overlapping_identifiers_remain_isolated_by_business(self) -> None:
+        rows = self.frame(
+            silver_event("shared", "payment_completed", business_id="business_a",
+                         customer_id="cus_shared", product_id="prd_shared",
+                         order_id="ord_shared", quantity=1, unit_price=10.0),
+            silver_event("shared", "payment_completed", business_id="business_b",
+                         customer_id="cus_shared", product_id="prd_shared",
+                         order_id="ord_shared", quantity=2, unit_price=40.0, offset=2),
+        )
+        tables = build_gold_tables(rows)
+        sales = {row.business_id: row.gross_revenue for row in tables.daily_sales.collect()}
+        customers = {(row.business_id, row.customer_id): row.total_revenue
+                     for row in tables.customer_metrics.collect()}
+        products = {(row.business_id, row.product_id): row.gross_revenue
+                    for row in tables.product_metrics.collect()}
+        self.assertEqual(sales, {"business_a": 10.0, "business_b": 80.0})
+        self.assertEqual(customers[("business_a", "cus_shared")], 10.0)
+        self.assertEqual(customers[("business_b", "cus_shared")], 80.0)
+        self.assertEqual(products[("business_a", "prd_shared")], 10.0)
+        self.assertEqual(products[("business_b", "prd_shared")], 80.0)
+
     def test_customer_metrics_counts_and_revenue(self) -> None:
         row = build_customer_metrics(self.silver).filter("customer_id = 'cus_1'").first()
 
@@ -279,6 +307,7 @@ class GoldAggregationTests(unittest.TestCase):
         self.assertEqual(
             set(tables.daily_sales.columns),
             {
+                "business_id",
                 "event_date",
                 "country",
                 "currency",

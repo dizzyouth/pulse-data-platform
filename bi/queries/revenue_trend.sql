@@ -1,4 +1,5 @@
 SELECT
+    business_id,
     event_date,
     currency,
     gross_revenue,
@@ -6,4 +7,4 @@ SELECT
     units_sold,
     avg_order_value
 FROM marts.revenue_by_day
-ORDER BY event_date, currency;
+ORDER BY business_id, event_date, currency;

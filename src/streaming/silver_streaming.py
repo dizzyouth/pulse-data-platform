@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.producers.models import EventType
+from src.onboarding import (
+    DEFAULT_BUSINESS_ID,
+    DEFAULT_MARKETPLACE_SCHEMA_VERSION,
+    DEFAULT_SOURCE_ID,
+    DEFAULT_SOURCE_TYPE,
+)
 from src.streaming.windows_spark import (
     configure_windows_spark_builder,
     configure_windows_spark_environment,
@@ -50,6 +56,10 @@ DEFAULT_SILVER_SHUFFLE_PARTITIONS = "4"
 SUPPORTED_EVENT_TYPES = tuple(event_type.value for event_type in EventType)
 
 MARKETPLACE_FIELDS = (
+    "business_id",
+    "source_type",
+    "source_id",
+    "schema_version",
     "event_id",
     "event_type",
     "event_timestamp",
@@ -75,6 +85,10 @@ LINEAGE_FIELDS = (
 
 BRONZE_VALID_SCHEMA = StructType(
     [
+        StructField("business_id", StringType(), True),
+        StructField("source_type", StringType(), True),
+        StructField("source_id", StringType(), True),
+        StructField("schema_version", StringType(), True),
         StructField("event_id", StringType(), True),
         StructField("event_type", StringType(), True),
         StructField("event_timestamp", TimestampType(), True),
@@ -239,7 +253,26 @@ def classify_silver_events(
 ) -> ClassifiedSilverFrames:
     """Normalize Bronze rows, apply Silver quality rules, and route failures."""
 
+    identity_count = sum(
+        F.col(name).isNotNull().cast("integer")
+        for name in ("business_id", "source_type", "source_id", "schema_version")
+    )
+    legacy_record = identity_count == 0
+    partial_identity = (identity_count > 0) & (identity_count < 4)
     normalized = bronze_valid.select(
+        F.when(legacy_record, F.lit(DEFAULT_BUSINESS_ID))
+        .otherwise(F.lower(F.trim("business_id")))
+        .alias("business_id"),
+        F.when(legacy_record, F.lit(DEFAULT_SOURCE_TYPE))
+        .otherwise(F.lower(F.trim("source_type")))
+        .alias("source_type"),
+        F.when(legacy_record, F.lit(DEFAULT_SOURCE_ID))
+        .otherwise(F.lower(F.trim("source_id")))
+        .alias("source_id"),
+        F.when(legacy_record, F.lit(DEFAULT_MARKETPLACE_SCHEMA_VERSION))
+        .otherwise(F.trim("schema_version"))
+        .alias("schema_version"),
+        partial_identity.alias("_partial_identity"),
         F.trim("event_id").alias("event_id"),
         F.lower(F.trim("event_type")).alias("event_type"),
         F.col("event_timestamp").cast("timestamp").alias("event_timestamp"),
@@ -259,6 +292,23 @@ def classify_silver_events(
 
     quality_errors = F.array_compact(
         F.array(
+            F.when(F.col("_partial_identity"), F.lit("partial_source_identity")),
+            F.when(
+                ~F.col("business_id").rlike("^[a-z0-9][a-z0-9_-]{2,63}$"),
+                F.lit("invalid_business_id"),
+            ),
+            F.when(
+                ~F.col("source_type").rlike("^[a-z0-9][a-z0-9_-]{2,63}$"),
+                F.lit("invalid_source_type"),
+            ),
+            F.when(
+                ~F.col("source_id").rlike("^[a-z0-9][a-z0-9_-]{2,63}$"),
+                F.lit("invalid_source_id"),
+            ),
+            F.when(
+                F.col("schema_version") != DEFAULT_MARKETPLACE_SCHEMA_VERSION,
+                F.lit("unsupported_schema_version"),
+            ),
             F.when(
                 F.col("event_id").isNull() | (F.col("event_id") == ""),
                 F.lit("missing_event_id"),
@@ -305,7 +355,9 @@ def classify_silver_events(
     if deduplicate:
         valid = valid.withWatermark(
             "event_timestamp", event_watermark
-        ).dropDuplicatesWithinWatermark(["event_id"])
+        ).dropDuplicatesWithinWatermark(
+            ["business_id", "source_type", "source_id", "event_id"]
+        )
     rejected = classified.filter(F.size("silver_validation_errors") > 0)
     return ClassifiedSilverFrames(valid=valid, rejected=rejected, all_records=classified)
 
@@ -336,7 +388,9 @@ def build_silver_snapshot(spark: SparkSession, paths: SilverPaths) -> None:
         event_watermark=paths.event_watermark,
         deduplicate=False,
     )
-    first_event = Window.partitionBy("event_id").orderBy(
+    first_event = Window.partitionBy(
+        "business_id", "source_type", "source_id", "event_id"
+    ).orderBy(
         F.col("event_timestamp").asc(),
         F.col("kafka_timestamp").asc_nulls_last(),
         F.col("kafka_partition").asc_nulls_last(),
