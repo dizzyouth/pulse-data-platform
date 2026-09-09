@@ -113,4 +113,3 @@ def adapter_for(config: SourceConfig):
         return ADAPTERS[config.source_type](config)
     except KeyError:
         raise ValueError(f"No local adapter for source type {config.source_type!r}") from None
-

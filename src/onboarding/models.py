@@ -106,4 +106,3 @@ class ValidationReport:
                 "source_count": self.source_count,
                 "issues": [{"code": issue.code, "path": issue.path, "message": issue.message}
                            for issue in self.issues]}
-
