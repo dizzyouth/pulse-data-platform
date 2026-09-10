@@ -1,0 +1,5 @@
+[
+  {"external_event_id":"del_100_final","order_id":"ord_100","shipment_id":"shp_100","provider":"courier_blue","provider_status":"parcel_delivered","courier":"courier_blue","tracking_reference":"trk_shared","attempt_number":1,"attempt_outcome":"delivered","event_at":"2026-01-03T14:00:00+04:00","received_at_utc":"2026-01-03T10:01:00Z"},
+  {"external_event_id":"del_104_final","order_id":"ord_104","shipment_id":"shp_104a","provider":"courier_blue","provider_status":"parcel_delivered","courier":"courier_blue","tracking_reference":"trk_104a","attempt_number":1,"attempt_outcome":"delivered","event_at":"2026-01-04T14:00:00+04:00","received_at_utc":"2026-01-04T10:01:00Z"},
+  {"external_event_id":"del_108_final","order_id":"ord_108","shipment_id":"shp_108","provider":"courier_green","provider_status":"parcel_delivered","courier":"courier_green","tracking_reference":"trk_108","attempt_number":1,"attempt_outcome":"delivered","event_at":"2026-01-05T14:00:00+04:00","received_at_utc":"2026-01-05T10:01:00Z"}
+]

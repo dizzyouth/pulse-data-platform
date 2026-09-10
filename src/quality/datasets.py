@@ -107,3 +107,51 @@ def marketing_gold_rules(dataset_name: str, *, layer: str = "gold") -> tuple[Rul
                         right_column="impressions", allow_null=False, severity=Severity.WARNING),
     ))
     return tuple(rules)
+
+
+def operations_silver_rules(dataset_name: str) -> tuple[Rule, ...]:
+    from src.operations.pipeline import SILVER_SCHEMAS
+
+    if dataset_name not in SILVER_SCHEMAS:
+        raise ValueError("Expected a known operations Silver dataset")
+    grains = {
+        "commerce_orders": ("business_id", "source_id", "provider", "order_id"),
+        "order_lines": ("business_id", "order_id", "line_id"),
+        "operational_events": ("event_id",),
+        "shipments": ("business_id", "source_id", "provider", "fulfillment_id", "shipment_id"),
+        "cash_collections": ("business_id", "source_id", "provider", "collection_id"),
+        "remittances": ("business_id", "source_id", "provider", "remittance_id"),
+    }
+    rules: list[Rule] = [RowCount(check_name="row_count", min_rows=1),
+                         Uniqueness(check_name="grain_unique", columns=grains[dataset_name])]
+    for field in SILVER_SCHEMAS[dataset_name].fields:
+        if not field.nullable:
+            rules.append(NullRatio(check_name=f"{field.name}_complete", column=field.name))
+    if dataset_name in {"commerce_orders", "order_lines", "cash_collections", "remittances"}:
+        currency = "collection_currency" if dataset_name == "cash_collections" else "currency"
+        rules.append(Pattern(check_name="currency_valid", column=currency, pattern="^[A-Z]{3}$"))
+    return tuple(rules)
+
+
+def operations_gold_rules(dataset_name: str, *, layer: str = "gold") -> tuple[Rule, ...]:
+    from src.operations.pipeline import GOLD_SCHEMAS
+    from src.warehouse.load_operations import OPERATIONS_GRAINS, OPERATIONS_TABLE_SPECS
+
+    if dataset_name not in GOLD_SCHEMAS or layer not in ("gold", "analytics"):
+        raise ValueError("Expected a known operations Gold dataset")
+    spec = next(item for item in OPERATIONS_TABLE_SPECS if item.name == dataset_name)
+    rules: list[Rule] = [RowCount(check_name="row_count", min_rows=1),
+                         Uniqueness(check_name="grain_unique", columns=OPERATIONS_GRAINS[dataset_name])]
+    for field in GOLD_SCHEMAS[dataset_name].fields:
+        if not field.nullable:
+            rules.append(NullRatio(check_name=f"{field.name}_complete", column=field.name))
+    if "currency" in GOLD_SCHEMAS[dataset_name].fieldNames():
+        rules.append(Pattern(check_name="currency_valid", column="currency", pattern="^[A-Z]{3}$"))
+    for name in spec.nonnegative_columns:
+        rules.append(NumericBounds(check_name=f"{name}_nonnegative", column=name, minimum=0,
+                                   allow_null=next(f for f in GOLD_SCHEMAS[dataset_name].fields
+                                                   if f.name == name).nullable))
+    for name in spec.rate_columns:
+        rules.append(NumericBounds(check_name=f"{name}_range", column=name,
+                                   minimum=0, maximum=1, allow_null=True))
+    return tuple(rules)

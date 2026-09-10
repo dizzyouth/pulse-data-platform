@@ -31,6 +31,8 @@ data/*
 data/fixtures/*
 !data/fixtures/marketing/
 !data/fixtures/marketing/*.json
+!data/fixtures/operations/
+!data/fixtures/operations/*.json
 
 # Logs
 logs/

@@ -1,0 +1,11 @@
+{
+  "business_id": "operations_demo_a",
+  "business_name": "Synthetic COD Dropship Business",
+  "status": "ACTIVE",
+  "timezone": "Asia/Riyadh",
+  "currency": "SAR",
+  "country": "SA",
+  "enabled_sources": ["orders_primary", "confirmation_partner", "fulfillment_partner", "courier_partner", "cod_partner", "settlement_partner"],
+  "reporting_timezone": "Asia/Riyadh",
+  "metadata": {"synthetic": true, "purpose": "Phase 6.2 COD-heavy offline fixture"}
+}

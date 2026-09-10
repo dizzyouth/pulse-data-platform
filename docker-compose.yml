@@ -32,6 +32,20 @@ x-airflow-common: &airflow-common
     GOLD_AD_GROUP_PERFORMANCE_PATH: /opt/pulse/data/gold/ad_group_performance
     GOLD_AD_PERFORMANCE_PATH: /opt/pulse/data/gold/ad_performance
     MARKETING_SHUFFLE_PARTITIONS: ${MARKETING_SHUFFLE_PARTITIONS:-4}
+    BRONZE_OPERATIONS_PATH: /opt/pulse/data/bronze/commerce_operations
+    SILVER_COMMERCE_ORDERS_PATH: /opt/pulse/data/silver/commerce_orders
+    SILVER_ORDER_LINES_PATH: /opt/pulse/data/silver/order_lines
+    SILVER_OPERATIONAL_EVENTS_PATH: /opt/pulse/data/silver/operational_events
+    SILVER_SHIPMENTS_PATH: /opt/pulse/data/silver/shipments
+    SILVER_CASH_COLLECTIONS_PATH: /opt/pulse/data/silver/cash_collections
+    SILVER_REMITTANCES_PATH: /opt/pulse/data/silver/remittances
+    GOLD_ORDER_OPERATIONS_CURRENT_PATH: /opt/pulse/data/gold/order_operations_current
+    GOLD_ORDER_OPERATIONS_DAILY_PATH: /opt/pulse/data/gold/order_operations_daily
+    GOLD_CONFIRMATION_PERFORMANCE_PATH: /opt/pulse/data/gold/confirmation_performance
+    GOLD_DELIVERY_PERFORMANCE_PATH: /opt/pulse/data/gold/delivery_performance
+    GOLD_COD_COLLECTION_PERFORMANCE_PATH: /opt/pulse/data/gold/cod_collection_performance
+    GOLD_REMITTANCE_PERFORMANCE_PATH: /opt/pulse/data/gold/remittance_performance
+    OPERATIONS_SHUFFLE_PARTITIONS: ${OPERATIONS_SHUFFLE_PARTITIONS:-4}
     WAREHOUSE_DB: ${WAREHOUSE_DB:-pulse_analytics}
     WAREHOUSE_USER: ${WAREHOUSE_USER:-pulse}
     WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-pulse-local-development-only}

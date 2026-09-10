@@ -71,7 +71,22 @@ def main(argv=None):
             if args.limit is not None and not args.dry_run:
                 raise ValueError("--limit is restricted to --dry-run so a timestamp tie cannot strand records")
             config = _source(registry, args.business_id, args.source_id)
-            if config.source_type in {"meta_ads", "tiktok_ads", "google_ads", "generic_ads"}:
+            if config.source_type in {"commerce_orders", "confirmation_events", "fulfillment_events",
+                                      "delivery_events", "cod_collections", "remittances"}:
+                if not args.dry_run:
+                    raise ValueError(
+                        "Operations source extraction is dry-run only here; use "
+                        "python -m src.operations.pipeline build for the deterministic snapshot"
+                    )
+                from src.operations.pipeline import extract_registered_operations
+                extractions = extract_registered_operations(
+                    registry, business_id=args.business_id, source_id=args.source_id)
+                records = [record.to_dict() for _, batch in extractions for record in batch]
+                payload = {"business_id": args.business_id, "source_id": args.source_id,
+                           "dry_run": True, "record_count": len(records),
+                           "records": records[:args.limit] if args.limit is not None else records}
+                success = True
+            elif config.source_type in {"meta_ads", "tiktok_ads", "google_ads", "generic_ads"}:
                 from src.marketing.pipeline import extract_registered_marketing
 
                 if args.limit is not None and not args.dry_run:
@@ -109,7 +124,22 @@ def main(argv=None):
             ).to_dict()
             success = True
         else:
-            payload, success = asdict(run_demo(args.business_id, registry)), True
+            source_types = {item.source_type for item in registry.sources_for(args.business_id)}
+            if source_types & {"commerce_orders", "confirmation_events", "fulfillment_events",
+                               "delivery_events", "cod_collections", "remittances"}:
+                from src.operations.pipeline import (build_gold_rows, extract_registered_operations,
+                                                     normalize_operations)
+                extractions = extract_registered_operations(registry, business_id=args.business_id)
+                silver = normalize_operations(extractions, registry)
+                gold = build_gold_rows(silver)
+                payload = {"business_id": args.business_id,
+                           "bronze": sum(len(batch) for _, batch in extractions),
+                           **{name: len(rows) for name, rows in silver.items()},
+                           **{name: len(rows) for name, rows in gold.items()},
+                           "quality_status": "PASS", "network_access": False}
+                success = True
+            else:
+                payload, success = asdict(run_demo(args.business_id, registry)), True
     except (RegistryError, ValueError, RuntimeError) as error:
         payload, success = {"error": str(error)}, False
     print(json.dumps(payload, sort_keys=True, indent=2))

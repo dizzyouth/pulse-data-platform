@@ -141,3 +141,75 @@ models:
         data_tests: [not_null, nonnegative]
       - name: spend_rank
         data_tests: [not_null]
+  - name: operations_overview
+    description: "Current operational order counts and distinct order-value/COD collection measures."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, currency, payment_type, current_operational_status]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: order_count
+        data_tests: [not_null, nonnegative]
+  - name: confirmation_operations
+    description: "Confirmation-eligible cohort outcomes with explicit confirmed/eligible denominator."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, cohort_date, provider, currency, payment_type]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: confirmation_rate
+        data_tests: [between_zero_and_one]
+  - name: operations_daily
+    description: "Event-date operational volumes in explicit business reporting timezone and original currency."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, event_date, reporting_timezone, currency, payment_type]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: delivered_orders
+        data_tests: [not_null, nonnegative]
+  - name: delivery_operations
+    description: "Courier delivery presentation with shipped-order denominators preserved."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, cohort_date, courier, currency, payment_type]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: delivery_rate
+        data_tests: [between_zero_and_one]
+  - name: cod_performance
+    description: "COD expected and collected cash; never labeled revenue or profit."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, collection_date, provider, currency]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: cash_collected
+        data_tests: [not_null, nonnegative]
+  - name: remittance_operations
+    description: "Settlement-period gross collection, fees, pending amount, and net remitted."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, period_end, provider, currency, settlement_status]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: net_remitted
+        data_tests: [not_null, nonnegative]

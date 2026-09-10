@@ -1,0 +1,9 @@
+[
+  {"external_event_id":"confirm_100","order_id":"ord_100","provider":"confirm_center","provider_status":"customer_confirmed","outcome":"confirmed","event_at":"2026-01-01T08:30:00+03:00","received_at_utc":"2026-01-01T05:31:00Z","provider_reason_code":"verbal_ok"},
+  {"external_event_id":"confirm_101","order_id":"ord_101","provider":"confirm_center","provider_status":"customer_rejected","outcome":"rejected","event_at":"2026-01-01T09:30:00+03:00","received_at_utc":"2026-01-01T06:31:00Z","provider_reason_code":"changed_mind"},
+  {"external_event_id":"confirm_102","order_id":"ord_102","provider":"confirm_center","provider_status":"customer_not_answering","outcome":"customer_unreachable","event_at":"2026-01-01T11:00:00+03:00","received_at_utc":"2026-01-01T08:01:00Z","provider_reason_code":"three_calls"},
+  {"external_event_id":"confirm_103","order_id":"ord_103","provider":"confirm_center","provider_status":"customer_confirmed","outcome":"confirmed","event_at":"2026-01-02T08:20:00+03:00","received_at_utc":"2026-01-02T05:21:00Z"},
+  {"external_event_id":"confirm_104","order_id":"ord_104","provider":"confirm_center","provider_status":"customer_confirmed","outcome":"confirmed","event_at":"2026-01-02T09:20:00+03:00","received_at_utc":"2026-01-02T06:21:00Z"},
+  {"external_event_id":"confirm_105","order_id":"ord_105","provider":"confirm_center","provider_status":"customer_confirmed","outcome":"confirmed","event_at":"2026-01-03T08:20:00+03:00","received_at_utc":"2026-01-03T05:21:00Z"},
+  {"external_event_id":"confirm_107","order_id":"ord_107","provider":"confirm_center","provider_status":"customer_confirmed","outcome":"confirmed","event_at":"2026-01-04T08:20:00+03:00","received_at_utc":"2026-01-04T05:21:00Z"}
+]

@@ -121,6 +121,34 @@ with DAG(
         env=QUALITY_EXECUTION_ENV,
         append_env=True,
     )
+    build_operations = BashOperator(
+        task_id="build_operations",
+        bash_command="python -m src.operations.pipeline build",
+        cwd=PROJECT_ROOT,
+    )
+    quality_check_operations_silver = BashOperator(
+        task_id="quality_check_operations_silver",
+        bash_command="python -m src.quality.runner operations_silver --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT, trigger_rule="all_success", do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV, append_env=True,
+    )
+    quality_check_operations_gold = BashOperator(
+        task_id="quality_check_operations_gold",
+        bash_command="python -m src.quality.runner operations_gold --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT, trigger_rule="all_success", do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV, append_env=True,
+    )
+    load_operations_to_warehouse = BashOperator(
+        task_id="load_operations_to_warehouse",
+        bash_command="python -m src.warehouse.load_operations load",
+        cwd=PROJECT_ROOT,
+    )
+    quality_check_operations_warehouse = BashOperator(
+        task_id="quality_check_operations_warehouse",
+        bash_command="python -m src.quality.runner operations_warehouse --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT, trigger_rule="all_success", do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV, append_env=True,
+    )
     anomaly_check = BashOperator(
         task_id="anomaly_check",
         bash_command="python -m src.quality.anomaly_runner --persist --log-format jsonl",
@@ -154,6 +182,11 @@ with DAG(
         >> quality_check_marketing_gold
         >> load_marketing_to_warehouse
         >> quality_check_marketing_warehouse
+        >> build_operations
+        >> quality_check_operations_silver
+        >> quality_check_operations_gold
+        >> load_operations_to_warehouse
+        >> quality_check_operations_warehouse
         >> anomaly_check
         >> run_dbt
         >> test_dbt

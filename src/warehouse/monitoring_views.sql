@@ -49,6 +49,9 @@ CREATE OR REPLACE VIEW monitoring_views.current_health AS
 WITH expected(dataset_name, layer) AS (VALUES
     ('silver_valid', 'silver'),
     ('marketing_silver', 'silver'),
+    ('commerce_orders', 'silver'), ('order_lines', 'silver'),
+    ('operational_events', 'silver'), ('shipments', 'silver'),
+    ('cash_collections', 'silver'), ('remittances', 'silver'),
     ('daily_sales', 'gold'), ('customer_metrics', 'gold'),
     ('product_metrics', 'gold'), ('funnel_metrics', 'gold'),
     ('daily_sales', 'analytics'), ('customer_metrics', 'analytics'),
@@ -56,7 +59,13 @@ WITH expected(dataset_name, layer) AS (VALUES
     ('marketing_daily', 'gold'), ('campaign_performance', 'gold'),
     ('ad_group_performance', 'gold'), ('ad_performance', 'gold'),
     ('marketing_daily', 'analytics'), ('campaign_performance', 'analytics'),
-    ('ad_group_performance', 'analytics'), ('ad_performance', 'analytics')
+    ('ad_group_performance', 'analytics'), ('ad_performance', 'analytics'),
+    ('order_operations_current', 'gold'), ('order_operations_daily', 'gold'),
+    ('confirmation_performance', 'gold'), ('delivery_performance', 'gold'),
+    ('cod_collection_performance', 'gold'), ('remittance_performance', 'gold'),
+    ('order_operations_current', 'analytics'), ('order_operations_daily', 'analytics'),
+    ('confirmation_performance', 'analytics'), ('delivery_performance', 'analytics'),
+    ('cod_collection_performance', 'analytics'), ('remittance_performance', 'analytics')
 ), successful AS (
     SELECT layer, max(checked_at_utc) AS latest_successful_check_at_utc
     FROM monitoring_views.check_history JOIN expected USING (dataset_name, layer)

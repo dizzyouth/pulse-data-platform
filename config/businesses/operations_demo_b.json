@@ -1,0 +1,11 @@
+{
+  "business_id": "operations_demo_b",
+  "business_name": "Synthetic Hybrid Commerce Business",
+  "status": "ACTIVE",
+  "timezone": "Asia/Dubai",
+  "currency": "AED",
+  "country": "AE",
+  "enabled_sources": ["orders_primary", "confirmation_partner", "fulfillment_partner", "courier_partner", "cod_partner", "settlement_partner"],
+  "reporting_timezone": "Asia/Dubai",
+  "metadata": {"synthetic": true, "purpose": "Phase 6.2 prepaid and COD offline fixture"}
+}

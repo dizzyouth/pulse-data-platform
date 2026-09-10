@@ -2087,3 +2087,232 @@ DAG run, and gives each task one short retry. Silver orchestration is a full
 snapshot rather than an incremental partition refresh, so it must not run
 concurrently with the standalone Silver writer. Airflow does not yet manage
 Bronze availability beyond validating its persisted Parquet input.
+## Phase 6.2: Commerce Operations and COD
+
+Phase 6.2 adds a provider-neutral operational domain without adding a second
+connector framework. Every order source, confirmation center, fulfillment
+partner, courier, and settlement provider is a normal version-controlled
+`SourceConfig`. `CommerceOperationsSourceAdapter` extends the existing local
+`SourceAdapter` implementation and emits the Phase 5.9 `IngestionEnvelope`.
+Registry validation and Airflow discovery therefore remain business/source
+driven; no DAG or pipeline is named after a fixture business or provider.
+
+The four realities remain intentionally separate:
+
+1. Phase 6.1 marketing attribution contains platform-reported conversions.
+2. Commerce orders contain actual order intent and `order_value`.
+3. Operational events describe confirmation, fulfillment, shipment, attempts,
+   delivery, refusal, and return.
+4. COD collection and remittance describe cash movement and settlement.
+
+There is no fabricated join between advertising conversions and operational
+orders. `order_value`, delivered order value, `cash_collected`, and
+`net_remitted` are different measures. None is labeled profit.
+
+### Canonical entities and relationships
+
+The Python domain model defines `CommerceOrder`, `OrderLine`,
+`ConfirmationEvent`, `Fulfillment`, `Shipment`, `DeliveryAttempt`,
+`OperationalEvent`, `CashCollection`, and `Remittance`. One order may have zero,
+one, or many fulfillments and shipments. Shipment `line_quantities` leaves room
+for partial fulfillment and split delivery without forcing all providers to
+report line allocation. A remittance may link to multiple order, shipment, and
+collection identities through `order_links`; a collection may be pending before
+that remittance record arrives.
+
+Canonical identity is business-aware. Order projection grain is
+`business_id + order_id`; source records and native events additionally include
+source/provider context. Reusing `ord_100`, `shp_100`, `trk_shared`, or
+`rem_100` in another business is safe. Provider event identity is:
+
+```text
+business_id + source_id + provider + external_event_id + revision
+```
+
+The resulting UUIDv5 is stable across retries. Exact duplicate provider events
+collapse in Silver. The logical identity without `revision` groups corrections;
+the greatest explicit revision is effective for projection, while all revision
+rows remain in operational history. If a provider has no event ID, a future
+adapter must compute a documented deterministic fingerprint from stable native
+identity and occurrence fields—it must not use extraction time.
+
+Only stable synthetic/pseudonymous customer references are optional. Names,
+phone numbers, email, full addresses, and precise locations are not accepted by
+the versioned contracts or present in fixtures.
+
+### Lifecycle and provider mapping
+
+The canonical taxonomy is:
+
+```text
+CREATED
+PENDING_CONFIRMATION
+CONFIRMED | REJECTED_CONFIRMATION | CANCELLED
+READY_FOR_FULFILLMENT
+FULFILLED
+SHIPPED
+IN_TRANSIT
+OUT_FOR_DELIVERY
+DELIVERY_ATTEMPTED | UNREACHABLE | RESCHEDULED | REFUSED
+DELIVERED
+RETURN_IN_TRANSIT
+RETURNED_TO_ORIGIN
+CASH_COLLECTED
+REMITTANCE_PENDING
+REMITTED
+```
+
+Stages are optional: prepaid orders need not be confirmed, and cancelled orders
+need not be fulfilled. Retried delivery may move from unreachable/rescheduled or
+refused to a later attempt and delivery. Delivered may progress to return,
+collection, pending remittance, or remitted. Confirmation rejection/cancellation
+cannot normally progress to shipment. A provider correction may explicitly
+revise an earlier state and is retained with `corrects_event_id`; an unmarked
+backward transition is a quality warning.
+
+Adapters map native status strings through `STATUS_MAPPINGS` and always retain
+both `canonical_status` and `provider_status`. Thus a native value such as
+`customer_not_answering` maps to `UNREACHABLE` without losing traceability.
+Confirmation outcome also retains the canonical outcome and native reason code:
+pending, confirmed, rejected, customer unreachable, duplicate, fraud suspected,
+cancelled, or invalid order. Confirmation rejection is not delivery refusal.
+
+Operational history is event-first. Every row retains business, source,
+provider, external and canonical event identity, order, optional shipment,
+event type, both statuses, occurrence time, UTC receive time, revision,
+correction link, and JSON details. Projection ordering uses occurrence time,
+then explicit revision, lifecycle-stage tie-break, and stable event ID. Receive
+time is lineage, not operational truth, so an old in-transit event received after
+delivery cannot roll the order backward.
+
+### Bronze, Silver, and Gold
+
+Bronze `commerce_operations` stores the complete raw provider payload inside the
+existing envelope with schema version, record identity, extraction timestamp,
+and source update/receive time. Provider-specific fields are not discarded.
+
+Silver produces six canonical datasets:
+
+- `commerce_orders` and `order_lines`
+- `operational_events`
+- `shipments`
+- `cash_collections`
+- `remittances`
+
+Silver performs contract/type validation, status mapping, UTC normalization,
+stable event identity, retry deduplication, and revision handling. It does not
+calculate business KPIs.
+
+Gold produces six business-scoped analytics datasets:
+
+- `order_operations_current`: derived latest state and component statuses per
+  business/order, including shipment and attempt counts.
+- `order_operations_daily`: event-date operational volumes using the business
+  reporting timezone and original currency.
+- `confirmation_performance`: order-created cohort confirmation outcomes.
+- `delivery_performance`: order-created cohort courier outcomes and durations.
+- `cod_collection_performance`: collection-date expected/collected cash.
+- `remittance_performance`: settlement-period fees, pending amount, and net
+  remitted.
+
+The current projection is never independently maintained. Rebuilding from the
+event ledger deterministically reproduces it.
+
+### KPI definitions
+
+All zero denominators return null, never zero or infinity:
+
+| KPI | Formula / denominator |
+| --- | --- |
+| Confirmation rate | confirmed orders / confirmation-eligible non-prepaid orders |
+| Ship rate | shipped orders / confirmed orders |
+| Delivery rate | delivered orders / shipped orders |
+| Refusal rate | refused orders / shipped orders |
+| Return rate | returned orders / delivered orders |
+| Unreachable rate | confirmation-unreachable orders / confirmation-eligible orders |
+| Average delivery attempts | delivery attempts / shipped orders |
+| Cash collection rate | cash collected / cash expected |
+| Time to confirm | confirmed occurrence time - order-created time |
+| Time to ship | shipped occurrence time - order-created time |
+| Time to deliver | delivered occurrence time - shipped occurrence time |
+
+Event-date tables answer “what happened on this reporting date?” Cohort tables
+group by the order-created reporting date and answer “what eventually happened
+to orders created then?” Recent cohorts are immature and must not be compared to
+complete older cohorts without an age/maturity filter. No currencies are summed
+across SAR, AED, USD, or any other code, and Phase 6.2 performs no FX conversion.
+
+COD delivery and cash settlement are also independent. A delivered COD parcel
+may have cash collected while `REMITTANCE_PENDING`; remittance records separately
+preserve gross collected, provider/shipping/COD fees, adjustments, net remitted,
+settlement status, period, and currency. This is operational settlement
+reporting, not accounting-grade reconciliation.
+
+### Contracts, quality, anomaly, orchestration, and BI
+
+The versioned source contracts are `commerce_orders_v1`,
+`confirmation_events_v1`, `fulfillment_events_v1`, `delivery_events_v1`,
+`cod_collections_v1`, and `remittances_v1`. Each declares required/optional
+fields, grain, source timestamp, status role, currency, and date/time semantics.
+The adapter reads an inclusive configurable lookback before a watermark because
+operational systems revise old records. A future stateful transport must advance
+its existing connector checkpoint only after the complete Bronze-to-serving
+transaction succeeds.
+
+Operations uses the existing INFO/WARNING/CRITICAL quality vocabulary. Checks
+cover business/order/event completeness, canonical uniqueness, invalid
+transitions, negative money, delivered-before-shipped, orphan order/shipment and
+collection/remittance references, collection without compatible delivery, and
+suspicious net-greater-than-gross settlement. Refusal, return, cancellation, and
+unreachable are business outcomes—not data-quality failures.
+
+The existing contextual anomaly engine is unchanged. When analytics tables
+exist, it reads confirmation/delivery/refusal/return rates, shipped/delivered
+volume, and pending remittance by business/provider/courier/currency context.
+Short series remain `INSUFFICIENT_HISTORY`.
+
+The analytics DAG adds generic build, Silver quality, Gold quality, warehouse
+load, and warehouse quality tasks before anomaly/dbt execution. A failed source
+is isolated by the registry/source task boundary and cannot mutate marketing or
+another business source. Local commands remain on the existing CLI:
+
+```powershell
+python -m src.onboarding.cli source-check operations_demo_a courier_partner
+python -m src.onboarding.cli extract operations_demo_a courier_partner --dry-run --limit 2
+python -m src.onboarding.cli source-status operations_demo_a courier_partner
+python -m src.onboarding.cli demo operations_demo_a
+python -m src.operations.pipeline demo
+python -m src.operations.pipeline build
+python -m src.warehouse.load_operations load
+```
+
+PostgreSQL receives the six `analytics.*` operational Gold tables through the
+same transactional staging/full-refresh pattern. dbt presents
+`marts.operations_overview`, `marts.operations_daily`,
+`marts.confirmation_operations`, `marts.delivery_operations`,
+`marts.cod_performance`, and `marts.remittance_operations`, with business-aware
+composite uniqueness and currency/status/value tests.
+
+Metabase provisions a separate **Pulse Commerce Operations** dashboard with
+Business, Provider, Courier, Payment type, Currency, Operational status,
+Settlement status, and date filters. Cards use precise labels: delivered orders,
+COD cash collected, pending remittance, and net remitted. Lifecycle-stage age
+supports future bottleneck questions such as pending confirmation, confirmed but
+not shipped, repeated attempts, and delivered but not remitted.
+
+The deterministic fixtures model a COD-heavy dropship business and a hybrid
+prepaid/COD business. They include overlapping business/provider identifiers,
+confirmation rejection/unreachable, cancellation, split shipment, refusal and
+return, repeated attempts then delivery, prepaid delivery, multi-order and
+pending remittances, duplicate delivery, out-of-order receipt, late correction,
+and multiple currencies. CI remains offline and needs no courier, 3PL, COD,
+store, or settlement credentials.
+
+Phase 6.2 limitations are deliberate: no real provider API, OAuth, secret
+manager, PII, FX, COGS, accounting ledger, contribution margin/profit,
+cross-channel attribution, automated recommendation, or ML optimization. A
+first real COD business should add only a source adapter/config (API, CSV, or a
+CSV-normalized Excel/database export) that satisfies these contracts. Phase 6.3
+can add production transports and checkpoint persistence, mature-cohort/service
+level reporting, richer partial-delivery allocation, and accounting-grade
+reconciliation without redesigning the operational core.

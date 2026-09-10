@@ -217,8 +217,110 @@ CONTRACTS = {
         unique_grain=("record_id",), source_timestamp="event_timestamp", currency_fields=("currency",)),
 }
 
+# Phase 6.2 provider-neutral commerce-operations contracts.  Provider-native
+# payloads remain in Bronze; these contracts only describe the stable boundary
+# each adapter must accept before canonical normalization.
+_OPERATION_EVENT_FIELDS = {
+    "external_event_id": FieldContract(types=(str,)),
+    "order_id": FieldContract(types=(str,)),
+    "provider": FieldContract(types=(str,)),
+    "provider_status": FieldContract(types=(str,)),
+    "event_at": FieldContract(types=(str,)),
+    "received_at_utc": FieldContract(types=(str,)),
+    "revision": OPTIONAL_INTEGER,
+    "corrects_event_id": OPTIONAL_STRING,
+    "shipment_id": OPTIONAL_STRING,
+    "details": OPTIONAL_OBJECT,
+}
+
+CONTRACTS.update({
+    ("commerce_orders", "commerce_orders_v1"): SourceContract(
+        source_type="commerce_orders", schema_version="commerce_orders_v1",
+        fields={
+            **_OPERATION_EVENT_FIELDS,
+            "external_order_id": OPTIONAL_STRING,
+            "order_created_at": FieldContract(types=(str,)),
+            "order_updated_at": FieldContract(types=(str,)),
+            "source_timezone": FieldContract(types=(str,)),
+            "currency": FieldContract(types=(str,)),
+            "order_value": FieldContract(types=(int, float)),
+            "payment_type": FieldContract(types=(str,)),
+            "customer_reference": OPTIONAL_STRING,
+            "lines": FieldContract(types=(list,)),
+        },
+        unique_grain=("external_event_id",), source_timestamp="received_at_utc",
+        currency_fields=("currency",), timezone_field="source_timezone",
+        grain_name="commerce_order_event",
+        metric_semantics={"order_value": "non_additive_order_snapshot"},
+    ),
+    ("confirmation_events", "confirmation_events_v1"): SourceContract(
+        source_type="confirmation_events", schema_version="confirmation_events_v1",
+        fields={**_OPERATION_EVENT_FIELDS, "outcome": FieldContract(types=(str,)),
+                "provider_reason_code": OPTIONAL_STRING},
+        unique_grain=("external_event_id",), source_timestamp="received_at_utc",
+        grain_name="confirmation_event",
+    ),
+    ("fulfillment_events", "fulfillment_events_v1"): SourceContract(
+        source_type="fulfillment_events", schema_version="fulfillment_events_v1",
+        fields={**_OPERATION_EVENT_FIELDS, "fulfillment_id": FieldContract(types=(str,)),
+                "courier": OPTIONAL_STRING, "tracking_reference": OPTIONAL_STRING,
+                "shipment_created_at": OPTIONAL_STRING, "shipped_at": OPTIONAL_STRING,
+                "delivered_at": OPTIONAL_STRING, "return_at": OPTIONAL_STRING,
+                "line_quantities": OPTIONAL_OBJECT},
+        unique_grain=("external_event_id",), source_timestamp="received_at_utc",
+        grain_name="fulfillment_event",
+    ),
+    ("delivery_events", "delivery_events_v1"): SourceContract(
+        source_type="delivery_events", schema_version="delivery_events_v1",
+        fields={**_OPERATION_EVENT_FIELDS, "courier": FieldContract(types=(str,)),
+                "tracking_reference": OPTIONAL_STRING, "attempt_number": OPTIONAL_INTEGER,
+                "attempt_outcome": OPTIONAL_STRING},
+        unique_grain=("external_event_id",), source_timestamp="received_at_utc",
+        grain_name="delivery_event",
+    ),
+    ("cod_collections", "cod_collections_v1"): SourceContract(
+        source_type="cod_collections", schema_version="cod_collections_v1",
+        fields={**_OPERATION_EVENT_FIELDS, "collection_id": FieldContract(types=(str,)),
+                "cash_expected": FieldContract(types=(int, float)),
+                "cash_collected": FieldContract(types=(int, float)),
+                "collection_currency": FieldContract(types=(str,)),
+                "collected_at": OPTIONAL_STRING, "remittance_id": OPTIONAL_STRING},
+        unique_grain=("external_event_id",), source_timestamp="received_at_utc",
+        currency_fields=("collection_currency",), grain_name="cash_collection_event",
+        metric_semantics={"cash_expected": "additive", "cash_collected": "additive"},
+    ),
+    ("remittances", "remittances_v1"): SourceContract(
+        source_type="remittances", schema_version="remittances_v1",
+        fields={
+            "external_event_id": FieldContract(types=(str,)),
+            "remittance_id": FieldContract(types=(str,)),
+            "provider": FieldContract(types=(str,)),
+            "provider_status": FieldContract(types=(str,)),
+            "period_start": FieldContract(types=(str,)), "period_end": FieldContract(types=(str,)),
+            "currency": FieldContract(types=(str,)),
+            "gross_collected": FieldContract(types=(int, float)),
+            "provider_fees": FieldContract(types=(int, float)),
+            "shipping_fees": FieldContract(types=(int, float)),
+            "cod_fees": FieldContract(types=(int, float)),
+            "adjustments": FieldContract(types=(int, float)),
+            "net_remitted": FieldContract(types=(int, float)),
+            "remitted_at": OPTIONAL_STRING,
+            "event_at": FieldContract(types=(str,)),
+            "received_at_utc": FieldContract(types=(str,)),
+            "revision": OPTIONAL_INTEGER, "corrects_event_id": OPTIONAL_STRING,
+            "order_links": FieldContract(types=(list,)), "details": OPTIONAL_OBJECT,
+        },
+        unique_grain=("external_event_id",), source_timestamp="received_at_utc",
+        currency_fields=("currency",), date_fields=("period_start", "period_end"),
+        grain_name="remittance_event",
+        metric_semantics={"gross_collected": "additive", "net_remitted": "additive"},
+    ),
+})
+
 SUPPORTED_SOURCE_TYPES = frozenset(
-    {"shopify", "meta_ads", "tiktok_ads", "google_ads", "generic_ads", "csv_manual"}
+    {"shopify", "meta_ads", "tiktok_ads", "google_ads", "generic_ads", "csv_manual",
+     "commerce_orders", "confirmation_events", "fulfillment_events", "delivery_events",
+     "cod_collections", "remittances"}
 )
 
 

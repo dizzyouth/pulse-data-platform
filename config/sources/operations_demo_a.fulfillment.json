@@ -1,0 +1,1 @@
+{"source_type":"fulfillment_events","source_id":"fulfillment_partner","enabled":true,"business_id":"operations_demo_a","ingestion_mode":"batch","schedule":"10 3 * * *","schema_version":"fulfillment_events_v1","credential_ref":"SYNTHETIC_OPERATIONS_TOKEN","metadata":{"adapter":"mock","fixture":"operations_demo_a.fulfillment.json","lookback_days":7,"synthetic":true}}

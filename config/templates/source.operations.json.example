@@ -1,0 +1,15 @@
+{
+  "source_type": "delivery_events",
+  "source_id": "courier_primary",
+  "enabled": true,
+  "business_id": "replace_business_id",
+  "ingestion_mode": "batch",
+  "schedule": "15 3 * * *",
+  "schema_version": "delivery_events_v1",
+  "credential_ref": "COURIER_API_TOKEN",
+  "metadata": {
+    "adapter": "replace_with_future_adapter",
+    "lookback_days": 7,
+    "source_timezone": "UTC"
+  }
+}

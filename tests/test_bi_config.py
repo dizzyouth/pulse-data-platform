@@ -19,6 +19,11 @@ EXPECTED_MARTS = {
     "marts.marketing_overview",
     "marts.campaign_performance",
     "marts.ad_performance",
+    "marts.operations_overview",
+    "marts.confirmation_operations",
+    "marts.delivery_operations",
+    "marts.cod_performance",
+    "marts.remittance_operations",
 }
 
 
@@ -57,7 +62,7 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_bi_queries_reference_all_and_only_dbt_marts(self) -> None:
         query_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
-            for directory in ("queries", "marketing_queries")
+            for directory in ("queries", "marketing_queries", "operations_queries")
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
         for mart in EXPECTED_MARTS:
@@ -83,6 +88,19 @@ class MetabaseConfigurationTests(unittest.TestCase):
         self.assertIn("Platform-reported conversions", source)
         self.assertIn("Platform-reported ROAS", source)
         self.assertIn('(\"business\", \"platform\", \"campaign\", \"currency\", \"start_date\", \"end_date\")', source)
+
+    def test_operations_dashboard_is_separate_and_uses_precise_financial_language(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn("Pulse Commerce Operations", source)
+        for label in ("Delivered orders", "COD cash collected", "Net remitted",
+                      "Confirmation rate", "Delivery rate"):
+            self.assertIn(label, source)
+        queries = list((PROJECT_ROOT / "bi" / "operations_queries").glob("*.sql"))
+        self.assertEqual(len(queries), 14)
+        for path in queries:
+            text = path.read_text().lower()
+            self.assertIn("business_id", text)
+            self.assertNotIn(" profit", text)
 
     def test_lifetime_rankings_do_not_expose_mixed_currency_money(self) -> None:
         for name in ("top_customers.sql", "top_products.sql"):

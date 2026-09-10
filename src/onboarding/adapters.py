@@ -111,6 +111,13 @@ ADAPTERS = {"shopify": MockShopifyAdapter, "meta_ads": MockMetaAdsAdapter,
 
 
 def adapter_for(config: SourceConfig):
+    if config.source_type in {
+        "commerce_orders", "confirmation_events", "fulfillment_events",
+        "delivery_events", "cod_collections", "remittances",
+    }:
+        from src.operations.adapters import operations_adapter_for
+
+        return operations_adapter_for(config)
     if config.source_type in {"meta_ads", "tiktok_ads", "google_ads", "generic_ads"}:
         from src.marketing.adapters import marketing_adapter_for
 

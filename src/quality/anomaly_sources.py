@@ -95,4 +95,50 @@ def load_metric_series():
                     if value is not None:
                         rows.append(("marketing_daily", "analytics", metric, dimensions,
                                      stamp, value, day, sample_size))
+        operations_exists = connection.execute(
+            "SELECT to_regclass('analytics.order_operations_daily') IS NOT NULL"
+        ).fetchone()[0]
+        if operations_exists:
+            daily = connection.execute("""SELECT business_id,event_date,reporting_timezone,currency,payment_type,
+              shipped_orders,delivered_orders FROM analytics.order_operations_daily
+              ORDER BY business_id,event_date,currency,payment_type""").fetchall()
+            for business_id, day, reporting_timezone, currency, payment_type, shipped, delivered in daily:
+                dimensions = {"business_id": business_id, "currency": currency,
+                              "payment_type": payment_type, "reporting_timezone": reporting_timezone}
+                stamp = datetime.combine(day, time.min, timezone.utc)
+                rows.extend(("order_operations_daily", "analytics", metric, dimensions, stamp, value, day, None)
+                            for metric, value in (("daily_shipped_volume", shipped),
+                                                  ("daily_delivered_volume", delivered)))
+            confirmation = connection.execute("""SELECT business_id,cohort_date,provider,currency,payment_type,
+              confirmation_rate,eligible_orders FROM analytics.confirmation_performance
+              ORDER BY business_id,cohort_date,provider,currency,payment_type""").fetchall()
+            for business_id, day, provider, currency, payment_type, value, sample_size in confirmation:
+                if value is not None:
+                    rows.append(("confirmation_performance", "analytics", "confirmation_rate",
+                        {"business_id": business_id, "provider": provider, "currency": currency,
+                         "payment_type": payment_type}, datetime.combine(day, time.min, timezone.utc),
+                        value, day, sample_size))
+            delivery = connection.execute("""SELECT business_id,cohort_date,courier,currency,payment_type,
+              delivery_rate,refusal_rate,return_rate,shipped_orders,delivered_orders
+              FROM analytics.delivery_performance
+              ORDER BY business_id,cohort_date,courier,currency,payment_type""").fetchall()
+            for business_id, day, courier, currency, payment_type, delivery_rate, refusal_rate, return_rate, shipped, delivered in delivery:
+                dimensions = {"business_id": business_id, "courier": courier,
+                              "currency": currency, "payment_type": payment_type}
+                stamp = datetime.combine(day, time.min, timezone.utc)
+                for metric, value, sample_size in (("delivery_rate", delivery_rate, shipped),
+                                                    ("refusal_rate", refusal_rate, shipped),
+                                                    ("return_rate", return_rate, delivered)):
+                    if value is not None:
+                        rows.append(("delivery_performance", "analytics", metric, dimensions,
+                                     stamp, value, day, sample_size))
+            pending = connection.execute("""SELECT business_id,period_end,provider,currency,
+              sum(remittance_pending_amount)::double precision
+              FROM analytics.remittance_performance
+              GROUP BY business_id,period_end,provider,currency
+              ORDER BY business_id,period_end,provider,currency""").fetchall()
+            rows.extend(("remittance_performance", "analytics", "pending_remittance_amount",
+                         {"business_id": business_id, "provider": provider, "currency": currency},
+                         datetime.combine(day, time.min, timezone.utc), value, day, None)
+                        for business_id, day, provider, currency, value in pending)
     return _series(rows)

@@ -136,3 +136,89 @@ sources:
             data_tests: [not_null]
           - name: spend
             data_tests: [not_null, nonnegative]
+      - name: order_operations_current
+        description: "Latest operational state derived from immutable event history; order value, cash collected, and remittance are separate measures."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, order_id]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: order_id
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: current_operational_status
+            data_tests:
+              - accepted_values:
+                  values: [CREATED, PENDING_CONFIRMATION, CONFIRMED, REJECTED_CONFIRMATION, CANCELLED, READY_FOR_FULFILLMENT, FULFILLED, SHIPPED, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERY_ATTEMPTED, DELIVERED, REFUSED, UNREACHABLE, RESCHEDULED, RETURN_IN_TRANSIT, RETURNED_TO_ORIGIN, CASH_COLLECTED, REMITTANCE_PENDING, REMITTED]
+      - name: order_operations_daily
+        description: "Operational event-date facts in the business reporting timezone; not an order-created cohort view."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, event_date, reporting_timezone, currency, payment_type]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: event_date
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: delivered_orders
+            data_tests: [not_null, nonnegative]
+      - name: confirmation_performance
+        description: "Order-created cohort confirmation metrics; confirmation rate is confirmed divided by confirmation-eligible non-prepaid orders."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, cohort_date, provider, currency, payment_type]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: provider
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: confirmation_rate
+            data_tests: [between_zero_and_one]
+      - name: delivery_performance
+        description: "Order-created cohort delivery metrics by courier; delivery rate is delivered divided by shipped."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, cohort_date, courier, currency, payment_type]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: courier
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: delivery_rate
+            data_tests: [between_zero_and_one]
+      - name: cod_collection_performance
+        description: "COD cash expected and collected by collection event date, provider, and original currency."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, collection_date, provider, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: provider
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: cash_collected
+            data_tests: [not_null, nonnegative]
+      - name: remittance_performance
+        description: "Provider settlement-period facts; net remitted is not revenue or profit."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, period_end, provider, currency, settlement_status]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: provider
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: net_remitted
+            data_tests: [not_null, nonnegative]

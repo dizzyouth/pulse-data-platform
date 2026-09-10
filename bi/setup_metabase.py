@@ -140,6 +140,12 @@ def _verify_marts(session_id: str, database_id: int) -> None:
         UNION ALL SELECT 'campaign_performance', count(*) FROM marts.campaign_performance
         UNION ALL SELECT 'ad_group_performance', count(*) FROM marts.ad_group_performance
         UNION ALL SELECT 'ad_performance', count(*) FROM marts.ad_performance
+        UNION ALL SELECT 'operations_overview', count(*) FROM marts.operations_overview
+        UNION ALL SELECT 'operations_daily', count(*) FROM marts.operations_daily
+        UNION ALL SELECT 'confirmation_operations', count(*) FROM marts.confirmation_operations
+        UNION ALL SELECT 'delivery_operations', count(*) FROM marts.delivery_operations
+        UNION ALL SELECT 'cod_performance', count(*) FROM marts.cod_performance
+        UNION ALL SELECT 'remittance_operations', count(*) FROM marts.remittance_operations
         ORDER BY mart
     """
     result = _request(
@@ -156,8 +162,8 @@ def _verify_marts(session_id: str, database_id: int) -> None:
     if result.get("status") != "completed":
         raise RuntimeError(f"Metabase mart verification failed: {result.get('error', result.get('status'))}")
     rows = result.get("data", {}).get("rows", [])
-    if len(rows) != 8 or any(int(row[1]) <= 0 for row in rows):
-        raise RuntimeError(f"Expected eight non-empty dbt marts, received: {rows!r}")
+    if len(rows) != 14 or any(int(row[1]) <= 0 for row in rows):
+        raise RuntimeError(f"Expected fourteen non-empty dbt marts, received: {rows!r}")
     print("Metabase queried marts successfully: " + ", ".join(f"{r[0]}={r[1]}" for r in rows))
 
 
@@ -317,6 +323,84 @@ def _ensure_marketing_dashboard(session_id: str, database_id: int) -> None:
     print(f"Marketing dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
 
 
+def _ensure_operations_dashboard(session_id: str, database_id: int) -> None:
+    """Reconcile a separate operations/COD dashboard with precise measure labels."""
+    def api(method: str, path: str, payload=None):
+        return _request(method, path, payload, session_id)
+
+    collection = _unique(api("GET", "/api/collection"), "Pulse Commerce Operations")
+    if collection is None:
+        collection = api("POST", "/api/collection", {"name": "Pulse Commerce Operations"})
+    collection_id = collection["id"]
+    items = api("GET", f"/api/collection/{collection_id}/items").get("data", [])
+    specs = [
+        ("orders_by_current_status", "Orders by current status", "bar", ("business","payment_type","currency","operational_status")),
+        ("confirmation_rate", "Confirmation rate", "line", ("business","provider","payment_type","currency","start_date","end_date")),
+        ("shipment_volume", "Shipment volume", "line", ("business","courier","payment_type","currency","start_date","end_date")),
+        ("delivery_rate", "Delivery rate", "line", ("business","courier","payment_type","currency","start_date","end_date")),
+        ("delivered_orders", "Delivered orders", "line", ("business","courier","payment_type","currency","start_date","end_date")),
+        ("refusal_rate", "Refusal rate", "line", ("business","courier","payment_type","currency","start_date","end_date")),
+        ("return_rate", "Return rate", "line", ("business","courier","payment_type","currency","start_date","end_date")),
+        ("unreachable_rate", "Unreachable rate", "line", ("business","provider","payment_type","currency","start_date","end_date")),
+        ("delivery_attempts", "Delivery attempts", "line", ("business","courier","payment_type","currency","start_date","end_date")),
+        ("courier_performance", "Courier performance", "table", ("business","courier","payment_type","currency","start_date","end_date")),
+        ("cod_cash_collected", "COD cash collected", "line", ("business","provider","currency","start_date","end_date")),
+        ("pending_remittance", "Pending remittance", "line", ("business","provider","currency","settlement_status","start_date","end_date")),
+        ("net_remitted", "Net remitted", "line", ("business","provider","currency","settlement_status","start_date","end_date")),
+        ("orders_stuck", "Orders stuck by lifecycle stage", "table", ("business","payment_type","currency","operational_status")),
+    ]
+    date_columns = {"confirmation_rate":"cohort_date", "shipment_volume":"cohort_date",
+                    "delivery_rate":"cohort_date", "delivered_orders":"cohort_date", "refusal_rate":"cohort_date",
+                    "return_rate":"cohort_date", "unreachable_rate":"cohort_date",
+                    "delivery_attempts":"cohort_date", "courier_performance":"cohort_date", "cod_cash_collected":"collection_date",
+                    "pending_remittance":"period_end", "net_remitted":"period_end"}
+    cards = []
+    for filename, title, display, dimensions in specs:
+        base_sql = (Path(__file__).parent / "operations_queries" / f"{filename}.sql").read_text().rstrip(";\n")
+        columns = {"business":"business_id", "operational_status":"current_operational_status"}
+        clauses = []
+        for name in dimensions:
+            column = date_columns.get(filename) if name.endswith("date") else columns.get(name, name)
+            operator = ">=" if name == "start_date" else "<=" if name == "end_date" else "="
+            clauses.append(f"[[AND {column} {operator} {{{{{name}}}}}]]")
+        query_sql = "SELECT * FROM (\n" + base_sql + "\n) AS operations_card\nWHERE 1=1\n" + "\n".join(clauses)
+        tags = {name: {"id": name, "name": name, "display-name": name.replace("_", " ").title(),
+                       "type": "date" if name.endswith("date") else "text", "required": False}
+                for name in dimensions}
+        query = {"database": database_id, "type": "native",
+                 "native": {"query": query_sql, "template-tags": tags}}
+        result = api("POST", "/api/dataset", {**query, "parameters": []})
+        if result.get("status") != "completed":
+            raise RuntimeError(f"Operations BI query {filename} failed: {result.get('error', result.get('status'))}")
+        payload = {"name": title, "collection_id": collection_id, "display": display,
+                   "dataset_query": query, "visualization_settings": {}}
+        existing = _unique([item for item in items if item.get("model") == "card"], title)
+        card = api("PUT", f"/api/card/{existing['id']}", payload) if existing else api("POST", "/api/card", payload)
+        cards.append((card, dimensions))
+    title = "Pulse Commerce Operations"
+    dashboard = _unique([item for item in items if item.get("model") == "dashboard"], title)
+    if dashboard is None:
+        dashboard = api("POST", "/api/dashboard", {"name": title, "collection_id": collection_id})
+    dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
+    parameter_names = ("business","provider","courier","payment_type","currency",
+                       "operational_status","settlement_status","start_date","end_date")
+    parameters = [{"id": name, "name": name.replace("_", " ").title(), "slug": name,
+                   "type": "date/single" if name.endswith("date") else "string/="} for name in parameter_names]
+    dashcards = dashboard.get("dashcards", [])
+    for index, (card, dimensions) in enumerate(cards):
+        mappings = [{"parameter_id": name, "card_id": card["id"],
+                     "target": ["variable", ["template-tag", name]]} for name in dimensions]
+        existing = next((item for item in dashcards if item.get("card_id") == card["id"]), None)
+        if existing: existing["parameter_mappings"] = mappings
+        else: dashcards.append({"id": -(200 + index), "card_id": card["id"], "row": (index // 2) * 8,
+                                "col": (index % 2) * 12, "size_x": 12, "size_y": 8,
+                                "parameter_mappings": mappings, "visualization_settings": {}})
+    managed = {parameter["id"] for parameter in parameters}
+    parameters.extend(parameter for parameter in dashboard.get("parameters", []) if parameter["id"] not in managed)
+    api("PUT", f"/api/dashboard/{dashboard['id']}", {"dashcards": dashcards, "parameters": parameters})
+    print(f"Commerce operations dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
+
+
 def main() -> int:
     properties = _request("GET", "/api/session/properties")
     setup_token = properties.get("setup-token")
@@ -327,6 +411,7 @@ def main() -> int:
     _verify_marts(session_id, database_id)
     _ensure_dashboard(session_id, database_id)
     _ensure_marketing_dashboard(session_id, database_id)
+    _ensure_operations_dashboard(session_id, database_id)
     if __package__:
         from .monitoring_dashboard import ensure_dashboard
     else:

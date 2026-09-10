@@ -1,0 +1,3 @@
+[
+  {"external_event_id":"collect_104","order_id":"ord_104","shipment_id":"shp_104a","provider":"cod_clearing","provider_status":"awaiting_settlement","collection_id":"col_104","cash_expected":250.0,"cash_collected":250.0,"collection_currency":"AED","collected_at":"2026-01-04T14:00:00+04:00","remittance_id":"rem_100","event_at":"2026-01-04T14:00:00+04:00","received_at_utc":"2026-01-04T10:05:00Z"}
+]

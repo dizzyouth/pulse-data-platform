@@ -19,6 +19,12 @@ EXPECTED_SOURCES = {
     "campaign_performance",
     "ad_group_performance",
     "ad_performance",
+    "order_operations_current",
+    "order_operations_daily",
+    "confirmation_performance",
+    "delivery_performance",
+    "cod_collection_performance",
+    "remittance_performance",
 }
 EXPECTED_MARTS = {
     "revenue_by_day",
@@ -29,6 +35,12 @@ EXPECTED_MARTS = {
     "campaign_performance",
     "ad_performance",
     "ad_group_performance",
+    "operations_overview",
+    "operations_daily",
+    "confirmation_operations",
+    "delivery_operations",
+    "cod_performance",
+    "remittance_operations",
 }
 
 
