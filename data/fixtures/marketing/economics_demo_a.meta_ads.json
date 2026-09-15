@@ -1,0 +1,4 @@
+[
+  {"date_start":"2026-01-01","account_id":"acct_a","campaign_id":"meta_cod","campaign_name":"COD Prospecting","adset_id":"set_a","ad_id":"ad_a","account_timezone":"Asia/Riyadh","account_currency":"SAR","spend":30.0,"impressions":1000,"clicks":50,"actions":2,"action_values":240.0,"updated_at_utc":"2026-01-02T01:00:00Z"},
+  {"date_start":"2026-01-04","account_id":"acct_a","campaign_id":"meta_unlinked","campaign_name":"Unlinked Awareness","adset_id":"set_b","ad_id":"ad_b","account_timezone":"Asia/Riyadh","account_currency":"SAR","spend":20.0,"impressions":800,"clicks":20,"actions":1,"action_values":100.0,"updated_at_utc":"2026-01-05T01:00:00Z"}
+]

@@ -1,0 +1,3 @@
+[
+  {"external_record_id":"attr_shared","provider":"first_party_map","order_id":"ord_100","marketing_platform":"google_ads","marketing_source_id":"google_economics","marketing_date":"2026-01-01","campaign_id":"google_hybrid","ad_group_id":"group_b","ad_id":"ad_b","attribution_method":"synthetic_fixture","attribution_weight":1.0,"linked_at":"2026-01-01T09:00:00+04:00","received_at_utc":"2026-01-01T05:05:00Z"}
+]

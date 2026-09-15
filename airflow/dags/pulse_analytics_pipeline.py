@@ -149,6 +149,34 @@ with DAG(
         cwd=PROJECT_ROOT, trigger_rule="all_success", do_xcom_push=False,
         env=QUALITY_EXECUTION_ENV, append_env=True,
     )
+    build_economics = BashOperator(
+        task_id="build_economics",
+        bash_command="python -m src.economics.pipeline build",
+        cwd=PROJECT_ROOT,
+    )
+    quality_check_economics_silver = BashOperator(
+        task_id="quality_check_economics_silver",
+        bash_command="python -m src.quality.runner economics_silver --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT, trigger_rule="all_success", do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV, append_env=True,
+    )
+    quality_check_economics_gold = BashOperator(
+        task_id="quality_check_economics_gold",
+        bash_command="python -m src.quality.runner economics_gold --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT, trigger_rule="all_success", do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV, append_env=True,
+    )
+    load_economics_to_warehouse = BashOperator(
+        task_id="load_economics_to_warehouse",
+        bash_command="python -m src.warehouse.load_economics load",
+        cwd=PROJECT_ROOT,
+    )
+    quality_check_economics_warehouse = BashOperator(
+        task_id="quality_check_economics_warehouse",
+        bash_command="python -m src.quality.runner economics_warehouse --block-on-critical --log-format jsonl --persist",
+        cwd=PROJECT_ROOT, trigger_rule="all_success", do_xcom_push=False,
+        env=QUALITY_EXECUTION_ENV, append_env=True,
+    )
     anomaly_check = BashOperator(
         task_id="anomaly_check",
         bash_command="python -m src.quality.anomaly_runner --persist --log-format jsonl",
@@ -187,6 +215,11 @@ with DAG(
         >> quality_check_operations_gold
         >> load_operations_to_warehouse
         >> quality_check_operations_warehouse
+        >> build_economics
+        >> quality_check_economics_silver
+        >> quality_check_economics_gold
+        >> load_economics_to_warehouse
+        >> quality_check_economics_warehouse
         >> anomaly_check
         >> run_dbt
         >> test_dbt

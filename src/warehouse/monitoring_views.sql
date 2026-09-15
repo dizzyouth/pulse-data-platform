@@ -52,6 +52,8 @@ WITH expected(dataset_name, layer) AS (VALUES
     ('commerce_orders', 'silver'), ('order_lines', 'silver'),
     ('operational_events', 'silver'), ('shipments', 'silver'),
     ('cash_collections', 'silver'), ('remittances', 'silver'),
+    ('product_costs', 'silver'), ('cost_components', 'silver'),
+    ('attribution_links', 'silver'),
     ('daily_sales', 'gold'), ('customer_metrics', 'gold'),
     ('product_metrics', 'gold'), ('funnel_metrics', 'gold'),
     ('daily_sales', 'analytics'), ('customer_metrics', 'analytics'),
@@ -66,6 +68,10 @@ WITH expected(dataset_name, layer) AS (VALUES
     ('order_operations_current', 'analytics'), ('order_operations_daily', 'analytics'),
     ('confirmation_performance', 'analytics'), ('delivery_performance', 'analytics'),
     ('cod_collection_performance', 'analytics'), ('remittance_performance', 'analytics')
+    ,('order_economics', 'gold'), ('business_economics_daily', 'gold')
+    ,('business_economics_cohort', 'gold'), ('attributed_campaign_economics', 'gold')
+    ,('order_economics', 'analytics'), ('business_economics_daily', 'analytics')
+    ,('business_economics_cohort', 'analytics'), ('attributed_campaign_economics', 'analytics')
 ), successful AS (
     SELECT layer, max(checked_at_utc) AS latest_successful_check_at_utc
     FROM monitoring_views.check_history JOIN expected USING (dataset_name, layer)

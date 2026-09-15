@@ -146,6 +146,11 @@ def _verify_marts(session_id: str, database_id: int) -> None:
         UNION ALL SELECT 'delivery_operations', count(*) FROM marts.delivery_operations
         UNION ALL SELECT 'cod_performance', count(*) FROM marts.cod_performance
         UNION ALL SELECT 'remittance_operations', count(*) FROM marts.remittance_operations
+        UNION ALL SELECT 'commerce_economics', count(*) FROM marts.commerce_economics
+        UNION ALL SELECT 'unit_economics', count(*) FROM marts.unit_economics
+        UNION ALL SELECT 'economics_daily', count(*) FROM marts.economics_daily
+        UNION ALL SELECT 'campaign_economics', count(*) FROM marts.campaign_economics
+        UNION ALL SELECT 'cod_economics', count(*) FROM marts.cod_economics
         ORDER BY mart
     """
     result = _request(
@@ -162,8 +167,8 @@ def _verify_marts(session_id: str, database_id: int) -> None:
     if result.get("status") != "completed":
         raise RuntimeError(f"Metabase mart verification failed: {result.get('error', result.get('status'))}")
     rows = result.get("data", {}).get("rows", [])
-    if len(rows) != 14 or any(int(row[1]) <= 0 for row in rows):
-        raise RuntimeError(f"Expected fourteen non-empty dbt marts, received: {rows!r}")
+    if len(rows) != 19 or any(int(row[1]) <= 0 for row in rows):
+        raise RuntimeError(f"Expected nineteen non-empty dbt marts, received: {rows!r}")
     print("Metabase queried marts successfully: " + ", ".join(f"{r[0]}={r[1]}" for r in rows))
 
 
@@ -401,6 +406,103 @@ def _ensure_operations_dashboard(session_id: str, database_id: int) -> None:
     print(f"Commerce operations dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
 
 
+def _ensure_economics_dashboard(session_id: str, database_id: int) -> None:
+    """Reconcile contribution-economics cards without implying accounting profit."""
+    def api(method: str, path: str, payload=None):
+        return _request(method, path, payload, session_id)
+
+    collection = _unique(api("GET", "/api/collection"), "Pulse Commerce Economics")
+    if collection is None:
+        collection = api("POST", "/api/collection", {"name": "Pulse Commerce Economics"})
+    collection_id = collection["id"]
+    items = api("GET", f"/api/collection/{collection_id}/items").get("data", [])
+    cohort_filters = ("business", "currency", "start_date", "end_date")
+    specs = [
+        ("economic_value_lenses", "Order / delivered / cash / remittance values", "line", cohort_filters),
+        ("marketing_spend", "Marketing spend", "line", cohort_filters),
+        ("product_cogs", "Product COGS", "line", cohort_filters),
+        ("operational_costs", "Variable operational costs", "line", cohort_filters),
+        ("contribution_before_marketing", "Contribution before marketing", "line", cohort_filters),
+        ("contribution_after_marketing", "Contribution after marketing", "line", cohort_filters),
+        ("cost_per_order", "Marketing cost per order", "line", cohort_filters),
+        ("cost_per_confirmed_order", "Marketing cost per confirmed order", "line", cohort_filters),
+        ("cost_per_delivered_order", "Marketing cost per delivered order", "line", cohort_filters),
+        ("contribution_per_delivered_order", "Contribution per delivered order", "line", cohort_filters),
+        ("contribution_margin", "Contribution margin", "line", cohort_filters),
+        ("pending_remittance", "Pending remittance", "line", cohort_filters),
+        ("delivered_unremitted", "Delivered but unremitted", "line", cohort_filters),
+        ("attributed_campaign_economics", "Attributed campaign economics", "table",
+         ("business", "platform", "campaign", "currency", "start_date", "end_date")),
+        ("unattributed_orders", "Unattributed orders", "table",
+         ("business", "payment_type", "currency", "start_date", "end_date")),
+        ("incomplete_economics", "Incomplete economics / missing COGS", "table",
+         ("business", "payment_type", "currency", "economic_completeness", "start_date", "end_date")),
+    ]
+    date_columns = {
+        "economic_value_lenses": "event_date",
+        "attributed_campaign_economics": "marketing_date",
+        "pending_remittance": "order_created_date",
+        "unattributed_orders": "order_created_date",
+        "incomplete_economics": "order_created_date",
+    }
+    cards = []
+    for filename, title, display, dimensions in specs:
+        base_sql = (Path(__file__).parent / "economics_queries" / f"{filename}.sql").read_text().rstrip(";\n")
+        columns = {"business": "business_id", "campaign": "campaign_id",
+                   "currency": "marketing_currency" if filename == "attributed_campaign_economics" else "currency",
+                   "economic_completeness": "economic_status"}
+        clauses = []
+        for name in dimensions:
+            column = (date_columns.get(filename, "cohort_date") if name.endswith("date")
+                      else columns.get(name, name))
+            operator = ">=" if name == "start_date" else "<=" if name == "end_date" else "="
+            clauses.append(f"[[AND {column} {operator} {{{{{name}}}}}]]")
+        query_sql = "SELECT * FROM (\n" + base_sql + "\n) AS economics_card\nWHERE 1=1\n" + "\n".join(clauses)
+        tags = {name: {"id": name, "name": name,
+                       "display-name": name.replace("_", " ").title(),
+                       "type": "date" if name.endswith("date") else "text", "required": False}
+                for name in dimensions}
+        query = {"database": database_id, "type": "native",
+                 "native": {"query": query_sql, "template-tags": tags}}
+        result = api("POST", "/api/dataset", {**query, "parameters": []})
+        if result.get("status") != "completed":
+            raise RuntimeError(f"Economics BI query {filename} failed: {result.get('error', result.get('status'))}")
+        payload = {"name": title, "collection_id": collection_id, "display": display,
+                   "dataset_query": query, "visualization_settings": {}}
+        existing = _unique([item for item in items if item.get("model") == "card"], title)
+        card = api("PUT", f"/api/card/{existing['id']}", payload) if existing else api("POST", "/api/card", payload)
+        cards.append((card, dimensions))
+
+    title = "Pulse Commerce Economics"
+    dashboard = _unique([item for item in items if item.get("model") == "dashboard"], title)
+    if dashboard is None:
+        dashboard = api("POST", "/api/dashboard", {"name": title, "collection_id": collection_id})
+    dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
+    parameter_names = ("business", "currency", "payment_type", "platform", "campaign",
+                       "economic_completeness", "start_date", "end_date")
+    parameters = [{"id": name, "name": name.replace("_", " ").title(), "slug": name,
+                   "type": "date/single" if name.endswith("date") else "string/="}
+                  for name in parameter_names]
+    dashcards = dashboard.get("dashcards", [])
+    for index, (card, dimensions) in enumerate(cards):
+        mappings = [{"parameter_id": name, "card_id": card["id"],
+                     "target": ["variable", ["template-tag", name]]} for name in dimensions]
+        existing = next((item for item in dashcards if item.get("card_id") == card["id"]), None)
+        if existing:
+            existing["parameter_mappings"] = mappings
+        else:
+            dashcards.append({"id": -(300 + index), "card_id": card["id"],
+                              "row": (index // 2) * 8, "col": (index % 2) * 12,
+                              "size_x": 12, "size_y": 8, "parameter_mappings": mappings,
+                              "visualization_settings": {}})
+    managed = {parameter["id"] for parameter in parameters}
+    parameters.extend(parameter for parameter in dashboard.get("parameters", [])
+                      if parameter["id"] not in managed)
+    api("PUT", f"/api/dashboard/{dashboard['id']}",
+        {"dashcards": dashcards, "parameters": parameters})
+    print(f"Commerce economics dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
+
+
 def main() -> int:
     properties = _request("GET", "/api/session/properties")
     setup_token = properties.get("setup-token")
@@ -412,6 +514,7 @@ def main() -> int:
     _ensure_dashboard(session_id, database_id)
     _ensure_marketing_dashboard(session_id, database_id)
     _ensure_operations_dashboard(session_id, database_id)
+    _ensure_economics_dashboard(session_id, database_id)
     if __package__:
         from .monitoring_dashboard import ensure_dashboard
     else:

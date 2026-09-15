@@ -1,0 +1,4 @@
+[
+  {"segments_date":"2026-01-01","customer_id":"acct_b","campaign_id":"google_hybrid","campaign_name":"Hybrid Search","ad_group_id":"group_b","ad_id":"ad_b","timezone":"Asia/Dubai","currency":"GBP","cost_micros":18000000,"impressions":900,"clicks":70,"conversions":2.0,"conversions_value":300.0,"updated_at_utc":"2026-01-02T01:00:00Z"},
+  {"segments_date":"2026-01-03","customer_id":"acct_b","campaign_id":"google_unlinked","campaign_name":"Unlinked Video","ad_group_id":"group_c","ad_id":"ad_c","timezone":"Asia/Dubai","currency":"GBP","cost_micros":9000000,"impressions":2000,"clicks":25,"conversions":0.0,"conversions_value":0.0,"updated_at_utc":"2026-01-04T01:00:00Z"}
+]

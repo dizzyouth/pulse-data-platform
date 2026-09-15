@@ -1,0 +1,1 @@
+{"source_type":"variable_cost_events","source_id":"variable_cost_ledger","enabled":true,"business_id":"operations_demo_b","ingestion_mode":"file","schedule":"5 6 * * *","schema_version":"variable_cost_events_v1","credential_ref":"SYNTHETIC_ECONOMICS_INPUT","metadata":{"adapter":"mock","fixture":"operations_demo_b.variable_costs.json","synthetic":true}}

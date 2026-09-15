@@ -28,6 +28,7 @@ class DashboardContractsTests(unittest.TestCase):
         from src.quality.datasets import GOLD_GRAINS
         from src.warehouse.load_marketing import MARKETING_GRAINS
         from src.warehouse.load_operations import OPERATIONS_GRAINS
+        from src.warehouse.load_economics import ECONOMICS_GRAINS
         source = (Path(__file__).resolve().parents[1] / "src/warehouse/monitoring_views.sql").read_text()
         inventory = set(re.findall(r"\('([^']+)', '(silver|gold|analytics)'\)", source))
         self.assertEqual(inventory, {("silver_valid", "silver"), ("marketing_silver", "silver")} |
@@ -35,7 +36,9 @@ class DashboardContractsTests(unittest.TestCase):
                                                         "shipments", "cash_collections", "remittances")} |
                          {(name, layer) for name in GOLD_GRAINS for layer in ("gold", "analytics")} |
                          {(name, layer) for name in MARKETING_GRAINS for layer in ("gold", "analytics")} |
-                         {(name, layer) for name in OPERATIONS_GRAINS for layer in ("gold", "analytics")})
+                         {(name, layer) for name in OPERATIONS_GRAINS for layer in ("gold", "analytics")} |
+                         {(name, "silver") for name in ("product_costs", "cost_components", "attribution_links")} |
+                         {(name, layer) for name in ECONOMICS_GRAINS for layer in ("gold", "analytics")})
 
     def test_main_provisions_both_dashboards(self):
         from bi import setup_metabase as setup
@@ -44,11 +47,13 @@ class DashboardContractsTests(unittest.TestCase):
              patch.object(setup, "_ensure_dashboard") as marketplace, \
              patch.object(setup, "_ensure_marketing_dashboard") as marketing, \
              patch.object(setup, "_ensure_operations_dashboard") as operations, \
+             patch.object(setup, "_ensure_economics_dashboard") as economics, \
              patch.object(dashboard, "ensure_dashboard", return_value=999) as health:
             self.assertEqual(setup.main(), 0)
             marketplace.assert_called_once_with("session", 123)
             marketing.assert_called_once_with("session", 123)
             operations.assert_called_once_with("session", 123)
+            economics.assert_called_once_with("session", 123)
             self.assertEqual(health.call_args.args[2], 123)
 
     def test_queries_are_select_only_and_filters_match_semantics(self):

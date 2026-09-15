@@ -222,3 +222,57 @@ sources:
             data_tests: [not_null]
           - name: net_remitted
             data_tests: [not_null, nonnegative]
+      - name: order_economics
+        description: "One row per canonical commerce order and currency, with distinct economic lenses and explicit completeness."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, order_source_id, order_id, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: order_id
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: order_value
+            data_tests: [not_null, nonnegative]
+          - name: product_cogs
+            data_tests: [not_null, nonnegative]
+      - name: business_economics_daily
+        description: "Event-date economics facts; stage values, cash, settlement, cost, and marketing remain separately named."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, event_date, reporting_timezone, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: event_date
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+      - name: business_economics_cohort
+        description: "Order-created cohort contribution and unit economics with explicit maturity and completeness."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, cohort_date, reporting_timezone, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: cohort_date
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: order_count
+            data_tests: [not_null, nonnegative]
+      - name: attributed_campaign_economics
+        description: "Campaign economics only for explicit links; unlinked spend remains visible with zero attributed orders."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, marketing_date, platform, marketing_source_id, campaign_id, marketing_currency, commerce_currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: marketing_currency
+            data_tests: [not_null]
+          - name: campaign_spend
+            data_tests: [not_null, nonnegative]

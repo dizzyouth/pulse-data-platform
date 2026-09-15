@@ -1,0 +1,1 @@
+{"source_type":"attribution_links","source_id":"attribution_map","enabled":true,"business_id":"operations_demo_b","ingestion_mode":"file","schedule":"10 6 * * *","schema_version":"attribution_links_v1","credential_ref":"SYNTHETIC_ECONOMICS_INPUT","metadata":{"adapter":"mock","fixture":"operations_demo_b.attribution_links.json","synthetic":true}}

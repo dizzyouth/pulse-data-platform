@@ -5,7 +5,7 @@
   "timezone": "Asia/Dubai",
   "currency": "AED",
   "country": "AE",
-  "enabled_sources": ["orders_primary", "confirmation_partner", "fulfillment_partner", "courier_partner", "cod_partner", "settlement_partner"],
+  "enabled_sources": ["orders_primary", "confirmation_partner", "fulfillment_partner", "courier_partner", "cod_partner", "settlement_partner", "google_economics", "product_cost_catalog", "variable_cost_ledger", "attribution_map"],
   "reporting_timezone": "Asia/Dubai",
-  "metadata": {"synthetic": true, "purpose": "Phase 6.2 prepaid and COD offline fixture"}
+  "metadata": {"synthetic": true, "purpose": "Hybrid prepaid/COD unified economics offline fixture"}
 }

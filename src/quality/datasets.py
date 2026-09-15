@@ -155,3 +155,58 @@ def operations_gold_rules(dataset_name: str, *, layer: str = "gold") -> tuple[Ru
         rules.append(NumericBounds(check_name=f"{name}_range", column=name,
                                    minimum=0, maximum=1, allow_null=True))
     return tuple(rules)
+
+
+def economics_silver_rules(dataset_name: str) -> tuple[Rule, ...]:
+    from src.economics.pipeline import SILVER_SCHEMAS
+
+    grains = {"product_costs": ("cost_record_id",), "cost_components": ("cost_component_id",),
+              "attribution_links": ("attribution_link_id",)}
+    if dataset_name not in grains:
+        raise ValueError("Expected a known economics Silver dataset")
+    rules: list[Rule] = [RowCount(check_name="row_count", min_rows=1),
+                         Uniqueness(check_name="grain_unique", columns=grains[dataset_name])]
+    for field in SILVER_SCHEMAS[dataset_name].fields:
+        if not field.nullable:
+            rules.append(NullRatio(check_name=f"{field.name}_complete", column=field.name))
+    if "currency" in SILVER_SCHEMAS[dataset_name].fieldNames():
+        rules.append(Pattern(check_name="currency_valid", column="currency", pattern="^[A-Z]{3}$"))
+    if dataset_name == "product_costs":
+        rules.append(NumericBounds(check_name="unit_cogs_nonnegative", column="unit_cogs", minimum=0))
+    if dataset_name == "cost_components":
+        rules.append(NumericBounds(check_name="amount_nonnegative", column="amount", minimum=0))
+    if dataset_name == "attribution_links":
+        rules.append(NumericBounds(check_name="attribution_weight_range", column="attribution_weight",
+                                   minimum=0, maximum=1))
+    return tuple(rules)
+
+
+def economics_gold_rules(dataset_name: str, *, layer: str = "gold") -> tuple[Rule, ...]:
+    from src.economics.pipeline import GOLD_SCHEMAS
+    from src.warehouse.load_economics import ECONOMICS_GRAINS, ECONOMICS_TABLE_SPECS
+
+    if dataset_name not in GOLD_SCHEMAS or layer not in ("gold", "analytics"):
+        raise ValueError("Expected a known economics Gold dataset")
+    spec = next(item for item in ECONOMICS_TABLE_SPECS if item.name == dataset_name)
+    rules: list[Rule] = [RowCount(check_name="row_count", min_rows=1),
+                         Uniqueness(check_name="grain_unique", columns=ECONOMICS_GRAINS[dataset_name])]
+    for field in GOLD_SCHEMAS[dataset_name].fields:
+        if not field.nullable:
+            rules.append(NullRatio(check_name=f"{field.name}_complete", column=field.name))
+    for currency in ("currency", "marketing_currency", "commerce_currency"):
+        if currency in GOLD_SCHEMAS[dataset_name].fieldNames():
+            rules.append(Pattern(check_name=f"{currency}_valid", column=currency,
+                                 pattern="^[A-Z]{3}$", allow_null=True))
+    nullable = {field.name for field in GOLD_SCHEMAS[dataset_name].fields if field.nullable}
+    for name in spec.nonnegative_columns:
+        rules.append(NumericBounds(check_name=f"{name}_nonnegative", column=name, minimum=0,
+                                   allow_null=name in nullable))
+    if dataset_name == "order_economics":
+        rules.extend((
+            NumericBounds(check_name="missing_cogs", column="missing_cogs_lines", maximum=0,
+                          allow_null=False, severity=Severity.WARNING),
+            LessThanOrEqual(check_name="net_remitted_not_above_gross",
+                            left_column="net_remitted", right_column="gross_collected",
+                            allow_null=False),
+        ))
+    return tuple(rules)

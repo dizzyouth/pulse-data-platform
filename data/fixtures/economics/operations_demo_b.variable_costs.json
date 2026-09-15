@@ -1,0 +1,7 @@
+[
+  {"external_record_id":"payment_100","provider":"payment_ledger","cost_type":"PAYMENT_PROCESSING","amount":8.0,"currency":"AED","effective_at":"2026-01-01T08:00:00+04:00","received_at_utc":"2026-01-01T04:10:00Z","cost_basis":"ACTUAL","cost_scope":"ORDER","order_id":"ord_100"},
+  {"external_record_id":"shipping_100","provider":"cost_ledger","cost_type":"SHIPPING","amount":14.0,"currency":"AED","effective_at":"2026-01-01T12:00:00+04:00","received_at_utc":"2026-01-01T08:10:00Z","cost_basis":"ACTUAL","cost_scope":"SHIPMENT","order_id":"ord_100","shipment_id":"shp_100"},
+  {"external_record_id":"shipping_104","provider":"cost_ledger","cost_type":"SHIPPING","amount":12.0,"currency":"AED","effective_at":"2026-01-02T14:00:00+04:00","received_at_utc":"2026-01-02T10:10:00Z","cost_basis":"ACTUAL","cost_scope":"SHIPMENT","order_id":"ord_104","shipment_id":"shp_104a"},
+  {"external_record_id":"cod_104","provider":"cost_ledger","cost_type":"COD_FEE","amount":5.0,"currency":"AED","effective_at":"2026-01-04T14:00:00+04:00","received_at_utc":"2026-01-04T10:10:00Z","cost_basis":"ACTUAL","cost_scope":"ORDER","order_id":"ord_104"},
+  {"external_record_id":"shipping_108","provider":"cost_ledger","cost_type":"SHIPPING","amount":6.0,"currency":"USD","effective_at":"2026-01-03T14:00:00+04:00","received_at_utc":"2026-01-03T10:10:00Z","cost_basis":"ESTIMATED","cost_scope":"SHIPMENT","order_id":"ord_108","shipment_id":"shp_108"}
+]

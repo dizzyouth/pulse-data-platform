@@ -25,6 +25,10 @@ EXPECTED_SOURCES = {
     "delivery_performance",
     "cod_collection_performance",
     "remittance_performance",
+    "order_economics",
+    "business_economics_daily",
+    "business_economics_cohort",
+    "attributed_campaign_economics",
 }
 EXPECTED_MARTS = {
     "revenue_by_day",
@@ -41,6 +45,11 @@ EXPECTED_MARTS = {
     "delivery_operations",
     "cod_performance",
     "remittance_operations",
+    "commerce_economics",
+    "unit_economics",
+    "economics_daily",
+    "campaign_economics",
+    "cod_economics",
 }
 
 

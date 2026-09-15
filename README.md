@@ -2316,3 +2316,120 @@ CSV-normalized Excel/database export) that satisfies these contracts. Phase 6.3
 can add production transports and checkpoint persistence, mature-cohort/service
 level reporting, richer partial-delivery allocation, and accounting-grade
 reconciliation without redesigning the operational core.
+
+## Phase 6.3: Unified Commerce Economics
+
+Phase 6.3 is a downstream enrichment layer over the existing marketing,
+commerce, operations, collection, and remittance facts. It does not re-ingest or
+reinterpret those domains. The economics adapter handles only provider-neutral
+manual inputs: effective-dated product costs, variable cost events, and explicit
+attribution links. Every record uses the existing `SourceAdapter` and ingestion
+envelope, including business/source lineage and deterministic revision identity.
+
+```text
+marketing Gold + operations Silver/Gold + economics Silver
+    -> pre-aggregated order economics
+    -> event-date and order-created-cohort economics
+    -> explicitly attributed campaign economics
+    -> transactional PostgreSQL load -> dbt -> Commerce Economics dashboard
+```
+
+The new versioned contracts are `product_costs_v1`,
+`variable_cost_events_v1`, and `attribution_links_v1`. Product cost selection is
+effective-dated at the order-line date and prefers SKU, then variant, then
+product specificity. Missing COGS is never replaced with a fabricated zero:
+`cogs_complete=false`, `missing_cogs_lines`, and `INCOMPLETE_COSTS` preserve the
+gap while contribution fields that require COGS remain null.
+
+Variable costs support product COGS, shipping, COD, fulfillment, return,
+payment-processing, provider, and other variable operating costs. Cost basis is
+explicit (`ACTUAL`, `CONFIGURED`, or `ESTIMATED`), as is order/shipment/
+remittance/schedule scope. Revisions are resolved first. Only components sharing
+an explicit `precedence_key` compete; actual beats configured, configured beats
+estimated, and the more specific scope wins. Unrelated valid components still
+sum, and `uses_estimated_costs` remains visible.
+
+Attribution is link-only—there is no date-, value-, or platform-conversion-based
+guessing. A link identifies the business, order, marketing source/platform and
+optional campaign/ad group/ad plus a weight and method. Unattributed orders stay
+in order and business economics. Unlinked campaign spend stays in campaign
+economics with zero attributed orders. Campaign spend is allocated once across
+explicit link weights, so adding order lines, shipments, or delivery attempts
+cannot multiply it.
+
+`order_economics` preserves separate placed, confirmed, shipped, delivered,
+cash-collected, gross-collected, and net-remitted lenses. For COD, the default
+recognized economic value is collected cash when present and otherwise
+delivered value; a placed order is not treated as realized. For prepaid orders,
+delivered value is the conservative Phase 6.3 lens. Refusal and return can
+produce zero recognized value while shipping, fulfillment, attempt, and return
+costs remain real. This is a contribution loss, not a data-quality failure.
+
+The formula is:
+
+```text
+variable_operational_cost = product_cogs + shipping_cost + cod_fee
+  + fulfillment_fee + return_fee + payment_processing_fee + provider_fee
+  + other_variable_cost
+
+contribution_before_marketing = recognized_economic_value
+  - variable_operational_cost
+
+contribution_after_marketing = contribution_before_marketing
+  - explicitly attributable marketing spend
+```
+
+These values are contribution economics, not net profit, accounting profit,
+EBITDA, or free cash flow. Phase 6.3 has no tax, payroll, rent, software overhead,
+financing, inventory accounting, or FX conversion. Marketing and commerce
+currencies must match before order/campaign contribution-after-marketing or ROAS
+is available.
+
+Gold contains one row per business/source/order/currency in `order_economics`,
+event-date facts in `business_economics_daily`, order-created cohort/unit metrics
+in `business_economics_cohort`, and explicit campaign results in
+`attributed_campaign_economics`. Inputs are aggregated independently before
+these joins. Remittance totals are allocated once to linked orders by collected
+cash, and order/cohort reconciliation checks protect against fanout.
+
+PostgreSQL exposes the four economics tables in `analytics`. dbt adds
+`marts.commerce_economics`, `marts.economics_daily`, `marts.unit_economics`,
+`marts.campaign_economics`, and `marts.cod_economics`. The separate **Pulse
+Commerce Economics** Metabase dashboard shows value lenses, marketing spend,
+COGS, variable operating costs, contribution, unit economics, pending
+remittance, delivered-but-unremitted value, attributed campaign economics,
+unattributed orders, and incomplete economics without overloading existing
+dashboards.
+
+Economics quality checks cover canonical grains, currencies, nonnegative input
+costs, effective ranges, overlapping costs, link weights, missing COGS,
+cross-currency attribution, net/gross settlement, contribution formulas, and
+order/cohort reconciliation. Negative contribution, refusal, return, and weak
+campaign outcomes remain valid business conditions. The existing contextual
+anomaly engine additionally consumes contribution margin, contribution value,
+marketing cost per delivered order, refusal loss, pending remittance, and
+delivered-but-unremitted value; short history still reports
+`INSUFFICIENT_HISTORY`.
+
+Run the deterministic offline path from the repository root:
+
+```powershell
+python -m src.onboarding.cli validate-all
+python -m src.onboarding.cli demo operations_demo_a
+python -m src.economics.pipeline demo
+python -m src.economics.pipeline build
+python -m src.quality.runner economics_silver --block-on-critical
+python -m src.quality.runner economics_gold --block-on-critical
+python -m src.warehouse.load_economics load
+```
+
+The synthetic businesses cover profitable COD, refusal/return losses, multiple
+attempts, split shipments, prepaid orders, missing and revised COGS, corrected
+and duplicate cost records, explicit and absent attribution, unlinked spend,
+multi-order remittance, delivered-but-unremitted orders, currency mismatch, and
+overlapping IDs across businesses. CI remains deterministic and offline.
+
+Deliberate next steps are production economics adapters and checkpointing,
+captured-payment/refund enrichment, more granular settlement allocations, and
+accounting/FX layers with their own explicit contracts. Complex attribution,
+incrementality, budgeting, and recommendations remain outside Phase 6.3.

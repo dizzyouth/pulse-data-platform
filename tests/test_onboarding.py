@@ -101,8 +101,9 @@ class SampleRegistryTests(unittest.TestCase):
         self.assertEqual({item.source_type for item in descriptors},
                          {"shopify", "csv_manual", "meta_ads", "tiktok_ads", "google_ads", "generic_ads",
                           "commerce_orders", "confirmation_events", "fulfillment_events", "delivery_events",
-                          "cod_collections", "remittances"})
-        self.assertEqual(len({item.task_id for item in descriptors}), 20)
+                          "cod_collections", "remittances", "product_costs",
+                          "variable_cost_events", "attribution_links"})
+        self.assertEqual(len({item.task_id for item in descriptors}), 29)
         self.assertTrue(all(item.schema_version.endswith("_v1") for item in descriptors))
 
     def test_multi_business_orders_and_ads_fixture_uses_overlapping_ids_safely(self):

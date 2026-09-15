@@ -24,6 +24,11 @@ EXPECTED_MARTS = {
     "marts.delivery_operations",
     "marts.cod_performance",
     "marts.remittance_operations",
+    "marts.commerce_economics",
+    "marts.unit_economics",
+    "marts.economics_daily",
+    "marts.campaign_economics",
+    "marts.cod_economics",
 }
 
 
@@ -62,7 +67,7 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_bi_queries_reference_all_and_only_dbt_marts(self) -> None:
         query_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
-            for directory in ("queries", "marketing_queries", "operations_queries")
+            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries")
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
         for mart in EXPECTED_MARTS:
@@ -107,6 +112,20 @@ class MetabaseConfigurationTests(unittest.TestCase):
             query = (PROJECT_ROOT / "bi" / "queries" / name).read_text().lower()
             self.assertNotIn("revenue", query)
             self.assertIn("purchase_rank", query)
+
+    def test_economics_dashboard_is_separate_and_uses_contribution_language(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn("Pulse Commerce Economics", source)
+        for label in ("Product COGS", "Variable operational costs",
+                      "Contribution before marketing", "Contribution after marketing",
+                      "Attributed campaign economics", "Incomplete economics / missing COGS"):
+            self.assertIn(label, source)
+        queries = list((PROJECT_ROOT / "bi" / "economics_queries").glob("*.sql"))
+        self.assertEqual(len(queries), 16)
+        for path in queries:
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertIn("business_id", text)
+            self.assertNotIn("net_profit", text)
 
 
 class MetabaseProvisioningTests(unittest.TestCase):

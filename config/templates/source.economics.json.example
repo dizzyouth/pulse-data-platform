@@ -1,0 +1,11 @@
+{
+  "source_type": "product_costs",
+  "source_id": "economics_input",
+  "enabled": false,
+  "business_id": "replace_me",
+  "ingestion_mode": "file",
+  "schedule": "0 5 * * *",
+  "schema_version": "product_costs_v1",
+  "credential_ref": "ECONOMICS_INPUT_REFERENCE",
+  "metadata": {"adapter": "mock", "fixture": "replace_me.json", "synthetic": true}
+}

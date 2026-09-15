@@ -141,4 +141,37 @@ def load_metric_series():
                          {"business_id": business_id, "provider": provider, "currency": currency},
                          datetime.combine(day, time.min, timezone.utc), value, day, None)
                         for business_id, day, provider, currency, value in pending)
+        economics_exists = connection.execute(
+            "SELECT to_regclass('analytics.business_economics_cohort') IS NOT NULL"
+        ).fetchone()[0]
+        if economics_exists:
+            economics = connection.execute("""SELECT business_id,cohort_date,reporting_timezone,currency,
+              marketing_cost_per_delivered_order,contribution_margin_pct,contribution_after_marketing,
+              pending_remittance_amount,delivered_but_unremitted_value,delivered_orders
+              FROM analytics.business_economics_cohort
+              ORDER BY business_id,cohort_date,currency""").fetchall()
+            for (business_id, day, reporting_timezone, currency, cost_per_delivery, margin,
+                 contribution, pending_amount, unremitted, delivered) in economics:
+                dimensions = {"business_id": business_id, "currency": currency,
+                              "reporting_timezone": reporting_timezone}
+                stamp = datetime.combine(day, time.min, timezone.utc)
+                for metric, value, sample_size in (
+                    ("marketing_cost_per_delivered_order", cost_per_delivery, delivered),
+                    ("contribution_margin_pct", margin, delivered),
+                    ("daily_contribution", contribution, delivered),
+                    ("pending_remittance_amount", pending_amount, None),
+                    ("delivered_but_unremitted_amount", unremitted, delivered),
+                ):
+                    if value is not None:
+                        rows.append(("business_economics_cohort", "analytics", metric,
+                                     dimensions, stamp, value, day, sample_size))
+            refusal_losses = connection.execute("""SELECT business_id,order_created_date,currency,
+              sum(-least(contribution_before_marketing,0))::double precision,count(*)
+              FROM analytics.order_economics WHERE refused AND contribution_before_marketing IS NOT NULL
+              GROUP BY business_id,order_created_date,currency
+              ORDER BY business_id,order_created_date,currency""").fetchall()
+            for business_id, day, currency, value, sample_size in refusal_losses:
+                rows.append(("order_economics", "analytics", "cod_refusal_economic_loss",
+                             {"business_id": business_id, "currency": currency},
+                             datetime.combine(day, time.min, timezone.utc), value, day, sample_size))
     return _series(rows)

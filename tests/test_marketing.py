@@ -206,11 +206,11 @@ class MarketingSparkFlowTests(unittest.TestCase):
                 "bronze", "silver", "marketing_daily", "campaign_performance",
                 "ad_group_performance", "ad_performance")))
             counts = run_pipeline(self.registry, paths=paths, spark=self.spark)
-            self.assertEqual(counts, {"bronze": 15, "silver": 12, "marketing_daily": 12,
-                                     "campaign_performance": 12, "ad_group_performance": 12,
-                                     "ad_performance": 12})
+            self.assertEqual(counts, {"bronze": 20, "silver": 17, "marketing_daily": 17,
+                                     "campaign_performance": 17, "ad_group_performance": 17,
+                                     "ad_performance": 17})
             bronze = self.spark.read.parquet(str(paths.bronze))
-            self.assertEqual(bronze.count(), 15)
+            self.assertEqual(bronze.count(), 20)
             self.assertIn("adset_id", json.loads(bronze.filter("source_type='meta_ads'").first().payload))
             for name in GOLD_SCHEMAS:
                 gold = self.spark.read.schema(GOLD_SCHEMAS[name]).parquet(str(getattr(paths, name)))

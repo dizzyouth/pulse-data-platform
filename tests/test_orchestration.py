@@ -135,6 +135,9 @@ class AirflowDagContractTests(unittest.TestCase):
             "quality_check_marketing_warehouse", "build_operations",
             "quality_check_operations_silver", "quality_check_operations_gold",
             "load_operations_to_warehouse", "quality_check_operations_warehouse",
+            "build_economics", "quality_check_economics_silver",
+            "quality_check_economics_gold", "load_economics_to_warehouse",
+            "quality_check_economics_warehouse",
             "anomaly_check", "run_dbt", "test_dbt",
         ))
         for target in ("silver", "gold", "warehouse"):

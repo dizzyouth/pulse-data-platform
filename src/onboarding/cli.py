@@ -71,7 +71,21 @@ def main(argv=None):
             if args.limit is not None and not args.dry_run:
                 raise ValueError("--limit is restricted to --dry-run so a timestamp tie cannot strand records")
             config = _source(registry, args.business_id, args.source_id)
-            if config.source_type in {"commerce_orders", "confirmation_events", "fulfillment_events",
+            if config.source_type in {"product_costs", "variable_cost_events", "attribution_links"}:
+                if not args.dry_run:
+                    raise ValueError(
+                        "Economics source extraction is dry-run only here; use "
+                        "python -m src.economics.pipeline build for the deterministic snapshot"
+                    )
+                from src.economics.pipeline import extract_registered_economics
+                extractions = extract_registered_economics(
+                    registry, business_id=args.business_id, source_id=args.source_id)
+                records = [record.to_dict() for _, batch in extractions for record in batch]
+                payload = {"business_id": args.business_id, "source_id": args.source_id,
+                           "dry_run": True, "record_count": len(records),
+                           "records": records[:args.limit] if args.limit is not None else records}
+                success = True
+            elif config.source_type in {"commerce_orders", "confirmation_events", "fulfillment_events",
                                       "delivery_events", "cod_collections", "remittances"}:
                 if not args.dry_run:
                     raise ValueError(
@@ -125,7 +139,16 @@ def main(argv=None):
             success = True
         else:
             source_types = {item.source_type for item in registry.sources_for(args.business_id)}
-            if source_types & {"commerce_orders", "confirmation_events", "fulfillment_events",
+            if source_types & {"product_costs", "variable_cost_events", "attribution_links"}:
+                from src.economics.pipeline import demo_rows
+                extractions, silver, gold = demo_rows(registry, business_id=args.business_id)
+                payload = {"business_id": args.business_id,
+                           "bronze": sum(len(batch) for _, batch in extractions),
+                           **{name: len(rows) for name, rows in silver.items()},
+                           **{name: len(rows) for name, rows in gold.items()},
+                           "quality_status": "PASS", "network_access": False}
+                success = True
+            elif source_types & {"commerce_orders", "confirmation_events", "fulfillment_events",
                                "delivery_events", "cod_collections", "remittances"}:
                 from src.operations.pipeline import (build_gold_rows, extract_registered_operations,
                                                      normalize_operations)

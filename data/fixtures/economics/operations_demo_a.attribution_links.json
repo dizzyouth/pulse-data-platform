@@ -1,0 +1,4 @@
+[
+  {"external_record_id":"attr_shared","provider":"first_party_map","order_id":"ord_100","marketing_platform":"meta_ads","marketing_source_id":"meta_economics","marketing_date":"2026-01-01","campaign_id":"meta_cod","ad_group_id":"set_a","ad_id":"ad_a","attribution_method":"synthetic_fixture","attribution_weight":1.0,"linked_at":"2026-01-01T09:00:00+03:00","received_at_utc":"2026-01-01T06:05:00Z"},
+  {"external_record_id":"attr_104","provider":"first_party_map","order_id":"ord_104","marketing_platform":"tiktok_ads","marketing_source_id":"tiktok_economics","marketing_date":"2026-01-02","campaign_id":"tiktok_cod","ad_group_id":"group_a","ad_id":"ad_a","attribution_method":"synthetic_fixture","attribution_weight":1.0,"linked_at":"2026-01-02T10:00:00+03:00","received_at_utc":"2026-01-02T07:05:00Z"}
+]

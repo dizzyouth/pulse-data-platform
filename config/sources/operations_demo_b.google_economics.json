@@ -1,0 +1,1 @@
+{"source_type":"google_ads","source_id":"google_economics","enabled":true,"business_id":"operations_demo_b","ingestion_mode":"batch","schedule":"30 5 * * *","schema_version":"google_ads_daily_v1","credential_ref":"SYNTHETIC_ECONOMICS_INPUT","metadata":{"adapter":"mock","fixture":"economics_demo_b.google_ads.json","synthetic":true,"lookback_days":3}}

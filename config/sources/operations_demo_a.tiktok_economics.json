@@ -1,0 +1,1 @@
+{"source_type":"tiktok_ads","source_id":"tiktok_economics","enabled":true,"business_id":"operations_demo_a","ingestion_mode":"batch","schedule":"35 4 * * *","schema_version":"tiktok_ads_daily_v1","credential_ref":"SYNTHETIC_ECONOMICS_INPUT","metadata":{"adapter":"mock","fixture":"economics_demo_a.tiktok_ads.json","synthetic":true,"lookback_days":3}}

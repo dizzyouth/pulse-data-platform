@@ -1,0 +1,4 @@
+[
+  {"external_record_id":"cost_shared","provider":"cost_catalog","product_id":"product_1","sku":"SKU-B1","unit_cogs":120.0,"currency":"AED","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_b2","provider":"cost_catalog","product_id":"product_2","unit_cogs":90.0,"currency":"AED","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"}
+]

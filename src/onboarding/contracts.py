@@ -317,10 +317,69 @@ CONTRACTS.update({
     ),
 })
 
+# Phase 6.3 accepts only enrichment inputs. Existing marketing, commerce, and
+# operations facts remain authoritative in their own domains.
+CONTRACTS.update({
+    ("product_costs", "product_costs_v1"): SourceContract(
+        source_type="product_costs", schema_version="product_costs_v1",
+        fields={
+            "external_record_id": FieldContract(types=(str,)),
+            "provider": FieldContract(types=(str,)),
+            "product_id": OPTIONAL_STRING, "variant_id": OPTIONAL_STRING,
+            "sku": OPTIONAL_STRING, "unit_cogs": FieldContract(types=(int, float)),
+            "currency": FieldContract(types=(str,)),
+            "valid_from": FieldContract(types=(str,)), "valid_to": OPTIONAL_STRING,
+            "revision": OPTIONAL_INTEGER, "updated_at_utc": FieldContract(types=(str,)),
+            "details": OPTIONAL_OBJECT,
+        },
+        unique_grain=("external_record_id",), source_timestamp="updated_at_utc",
+        currency_fields=("currency",), date_fields=("valid_from", "valid_to"),
+        grain_name="effective_dated_product_cost",
+        metric_semantics={"unit_cogs": "effective_dated_non_additive_unit_cost"},
+    ),
+    ("variable_cost_events", "variable_cost_events_v1"): SourceContract(
+        source_type="variable_cost_events", schema_version="variable_cost_events_v1",
+        fields={
+            "external_record_id": FieldContract(types=(str,)),
+            "provider": FieldContract(types=(str,)), "cost_type": FieldContract(types=(str,)),
+            "amount": FieldContract(types=(int, float)), "currency": FieldContract(types=(str,)),
+            "effective_at": FieldContract(types=(str,)), "received_at_utc": FieldContract(types=(str,)),
+            "cost_basis": FieldContract(types=(str,)), "cost_scope": FieldContract(types=(str,)),
+            "precedence_key": OPTIONAL_STRING, "order_id": OPTIONAL_STRING,
+            "shipment_id": OPTIONAL_STRING, "remittance_id": OPTIONAL_STRING,
+            "product_id": OPTIONAL_STRING, "variant_id": OPTIONAL_STRING, "sku": OPTIONAL_STRING,
+            "revision": OPTIONAL_INTEGER, "corrects_record_id": OPTIONAL_STRING,
+            "details": OPTIONAL_OBJECT,
+        },
+        unique_grain=("external_record_id",), source_timestamp="received_at_utc",
+        currency_fields=("currency",), grain_name="variable_cost_event",
+        metric_semantics={"amount": "additive_after_precedence_resolution"},
+    ),
+    ("attribution_links", "attribution_links_v1"): SourceContract(
+        source_type="attribution_links", schema_version="attribution_links_v1",
+        fields={
+            "external_record_id": FieldContract(types=(str,)),
+            "provider": FieldContract(types=(str,)), "order_id": FieldContract(types=(str,)),
+            "marketing_platform": FieldContract(types=(str,)),
+            "marketing_source_id": FieldContract(types=(str,)),
+            "marketing_date": FieldContract(types=(str,)),
+            "campaign_id": OPTIONAL_STRING, "ad_group_id": OPTIONAL_STRING, "ad_id": OPTIONAL_STRING,
+            "attribution_method": FieldContract(types=(str,)),
+            "attribution_weight": FieldContract(types=(int, float)),
+            "linked_at": FieldContract(types=(str,)), "received_at_utc": FieldContract(types=(str,)),
+            "revision": OPTIONAL_INTEGER, "details": OPTIONAL_OBJECT,
+        },
+        unique_grain=("external_record_id",), source_timestamp="received_at_utc",
+        date_fields=("marketing_date",), grain_name="explicit_attribution_link",
+        metric_semantics={"attribution_weight": "fractional_order_credit"},
+    ),
+})
+
 SUPPORTED_SOURCE_TYPES = frozenset(
     {"shopify", "meta_ads", "tiktok_ads", "google_ads", "generic_ads", "csv_manual",
      "commerce_orders", "confirmation_events", "fulfillment_events", "delivery_events",
-     "cod_collections", "remittances"}
+     "cod_collections", "remittances", "product_costs", "variable_cost_events",
+     "attribution_links"}
 )
 
 

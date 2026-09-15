@@ -46,6 +46,15 @@ x-airflow-common: &airflow-common
     GOLD_COD_COLLECTION_PERFORMANCE_PATH: /opt/pulse/data/gold/cod_collection_performance
     GOLD_REMITTANCE_PERFORMANCE_PATH: /opt/pulse/data/gold/remittance_performance
     OPERATIONS_SHUFFLE_PARTITIONS: ${OPERATIONS_SHUFFLE_PARTITIONS:-4}
+    BRONZE_ECONOMICS_PATH: /opt/pulse/data/bronze/commerce_economics
+    SILVER_PRODUCT_COSTS_PATH: /opt/pulse/data/silver/product_costs
+    SILVER_COST_COMPONENTS_PATH: /opt/pulse/data/silver/cost_components
+    SILVER_ATTRIBUTION_LINKS_PATH: /opt/pulse/data/silver/attribution_links
+    GOLD_ORDER_ECONOMICS_PATH: /opt/pulse/data/gold/order_economics
+    GOLD_BUSINESS_ECONOMICS_DAILY_PATH: /opt/pulse/data/gold/business_economics_daily
+    GOLD_BUSINESS_ECONOMICS_COHORT_PATH: /opt/pulse/data/gold/business_economics_cohort
+    GOLD_ATTRIBUTED_CAMPAIGN_ECONOMICS_PATH: /opt/pulse/data/gold/attributed_campaign_economics
+    ECONOMICS_SHUFFLE_PARTITIONS: ${ECONOMICS_SHUFFLE_PARTITIONS:-4}
     WAREHOUSE_DB: ${WAREHOUSE_DB:-pulse_analytics}
     WAREHOUSE_USER: ${WAREHOUSE_USER:-pulse}
     WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-pulse-local-development-only}

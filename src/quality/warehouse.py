@@ -7,7 +7,8 @@ from tempfile import TemporaryDirectory
 import psycopg
 from psycopg import sql
 from pyspark.sql.types import (
-    DateType, DoubleType, LongType, StringType, StructField, StructType, TimestampType,
+    BooleanType, DateType, DoubleType, LongType, StringType, StructField, StructType,
+    TimestampType,
 )
 
 from src.warehouse.load_gold import (
@@ -17,7 +18,8 @@ from src.warehouse.load_gold import (
 
 def warehouse_schema(spec) -> StructType:
     types = {"DATE": DateType(), "TEXT": StringType(), "BIGINT": LongType(),
-             "DOUBLE PRECISION": DoubleType(), "TIMESTAMP WITH TIME ZONE": TimestampType()}
+             "DOUBLE PRECISION": DoubleType(), "TIMESTAMP WITH TIME ZONE": TimestampType(),
+             "BOOLEAN": BooleanType()}
     # Keep nulls visible to the quality rules, even for NOT NULL columns.
     return StructType([StructField(col.name, types[col.postgres_type], True) for col in spec.columns])
 
@@ -118,3 +120,32 @@ def operations_warehouse_frames(spark):
                     paths[spec.name] = path
         yield {spec.name: spark.read.schema(warehouse_schema(spec)).option("mode", "FAILFAST").json(str(paths[spec.name]))
                for spec in OPERATIONS_TABLE_SPECS}
+
+
+@contextmanager
+def economics_warehouse_frames(spark):
+    """Expose the four economics analytics tables to the shared quality engine."""
+    from src.warehouse.load_economics import ECONOMICS_TABLE_SPECS
+
+    with TemporaryDirectory(prefix="pulse-quality-economics-warehouse-") as directory:
+        paths = {}
+        with psycopg.connect(**connection_kwargs()) as connection:
+            connection.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+            connection.read_only = True
+            with connection.cursor() as cursor:
+                for spec in ECONOMICS_TABLE_SPECS:
+                    cursor.execute(
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
+                        (WAREHOUSE_SCHEMA, spec.name))
+                    columns = dict(cursor.fetchall())
+                    validate_required_columns(spec.name, tuple(columns), spec)
+                    path = Path(directory, f"{spec.name}.jsonl")
+                    with connection.cursor(name=f"quality_{spec.name}") as rows, path.open("w", encoding="utf-8") as output:
+                        rows.execute(sql.SQL("SELECT row_to_json(snapshot)::text FROM {}.{} AS snapshot").format(
+                            sql.Identifier(WAREHOUSE_SCHEMA), sql.Identifier(spec.name)))
+                        for (record,) in rows:
+                            output.write(record + "\n")
+                    paths[spec.name] = path
+        yield {spec.name: spark.read.schema(warehouse_schema(spec)).option("mode", "FAILFAST").json(str(paths[spec.name]))
+               for spec in ECONOMICS_TABLE_SPECS}

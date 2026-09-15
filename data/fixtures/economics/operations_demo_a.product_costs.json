@@ -1,0 +1,12 @@
+[
+  {"external_record_id":"cost_shared","provider":"cost_catalog","product_id":"product_1","sku":"SKU-A1","unit_cogs":10.0,"currency":"SAR","valid_from":"2025-01-01","valid_to":"2026-01-15","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a1_new","provider":"cost_catalog","product_id":"product_1","sku":"SKU-A1","unit_cogs":12.0,"currency":"SAR","valid_from":"2026-01-16","updated_at_utc":"2026-01-16T00:00:00Z"},
+  {"external_record_id":"cost_a2","provider":"cost_catalog","product_id":"product_2","unit_cogs":30.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a3","provider":"cost_catalog","product_id":"product_3","unit_cogs":20.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a4","provider":"cost_catalog","product_id":"product_4","unit_cogs":55.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a5","provider":"cost_catalog","product_id":"product_5","unit_cogs":45.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a6","provider":"cost_catalog","product_id":"product_6","unit_cogs":25.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a7","provider":"cost_catalog","product_id":"product_7","unit_cogs":35.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a8","provider":"cost_catalog","product_id":"product_8","unit_cogs":25.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"},
+  {"external_record_id":"cost_a9","provider":"cost_catalog","product_id":"product_9","unit_cogs":40.0,"currency":"SAR","valid_from":"2025-01-01","updated_at_utc":"2026-01-01T00:00:00Z"}
+]

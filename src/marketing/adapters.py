@@ -57,12 +57,16 @@ class MarketingSourceAdapter(MockSourceAdapter):
             reporting_start(date(2026, 1, 1), self.lookback_days)
         except ValueError as error:
             errors.append(str(error))
+        fixture = str(self.config.metadata.get("fixture", self.fixture_name))
+        if Path(fixture).name != fixture or not (FIXTURE_ROOT / fixture).is_file():
+            errors.append("metadata.fixture must name a local marketing fixture")
         return tuple(errors)
 
     def raw_payloads(self) -> tuple[dict[str, Any], ...]:
-        value = json.loads((FIXTURE_ROOT / self.fixture_name).read_text(encoding="utf-8"))
+        fixture_name = str(self.config.metadata.get("fixture", self.fixture_name))
+        value = json.loads((FIXTURE_ROOT / fixture_name).read_text(encoding="utf-8"))
         if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-            raise ValueError(f"Marketing fixture {self.fixture_name} must contain an object array")
+            raise ValueError(f"Marketing fixture {fixture_name} must contain an object array")
         return tuple(value)
 
     def _canonical(self, payload: dict[str, Any]) -> dict[str, Any]:
