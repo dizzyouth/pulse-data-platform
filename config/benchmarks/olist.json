@@ -1,0 +1,39 @@
+{
+  "dataset_name": "Brazilian E-Commerce Public Dataset by Olist",
+  "dataset_reference": "https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce",
+  "dataset_version": "public snapshot commonly published as olistbr/brazilian-ecommerce",
+  "benchmark_id": "olist_public_v1",
+  "business_id": "public_olist_benchmark",
+  "source_id": "olist_public_files",
+  "expected_local_path": "data/public/olist",
+  "fixture_path": "data/fixtures/olist",
+  "currency": "BRL",
+  "source_timezone": "America/Sao_Paulo",
+  "purpose": "Validate provider-neutral commerce ingestion, fanout safety, data quality, economics completeness, and analytics on an external real-world dataset.",
+  "required_files": {
+    "customers": {"filename": "olist_customers_dataset.csv", "expected_rows": 99441},
+    "orders": {"filename": "olist_orders_dataset.csv", "expected_rows": 99441},
+    "order_items": {"filename": "olist_order_items_dataset.csv", "expected_rows": 112650},
+    "payments": {"filename": "olist_order_payments_dataset.csv", "expected_rows": 103886},
+    "products": {"filename": "olist_products_dataset.csv", "expected_rows": 32951},
+    "sellers": {"filename": "olist_sellers_dataset.csv", "expected_rows": 3095},
+    "category_translation": {"filename": "product_category_name_translation.csv", "expected_rows": 71}
+  },
+  "deferred_files": {
+    "reviews": {"filename": "olist_order_reviews_dataset.csv", "expected_rows": 99224, "reason": "Free text is not needed for the initial commerce benchmark."},
+    "geolocation": {"filename": "olist_geolocation_dataset.csv", "expected_rows": 1000163, "reason": "Precise location and unrelated volume are intentionally excluded."}
+  },
+  "acceptance": {
+    "status_counts": {"delivered": 96478, "shipped": 1107, "canceled": 625, "unavailable": 609},
+    "orders_with_multiple_items": 9803,
+    "orders_with_multiple_sellers": 1278,
+    "orders_with_multiple_payments": 2961,
+    "late_deliveries": 7827,
+    "carrier_before_approval": 1359,
+    "delivery_before_carrier": 23,
+    "products_missing_category": 610,
+    "orders_with_items_and_payments": 98665,
+    "payment_mismatch_over_0_01": 380,
+    "payment_mismatch_over_1_00": 249
+  }
+}

@@ -276,3 +276,67 @@ sources:
             data_tests: [not_null]
           - name: campaign_spend
             data_tests: [not_null, nonnegative]
+      - name: olist_orders_by_status
+        description: "Olist provider-native order status counts; unmapped statuses remain native."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, native_status]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: native_status
+            data_tests: [not_null]
+          - name: order_count
+            data_tests: [not_null, nonnegative]
+      - name: olist_commerce_daily
+        description: "Daily Olist commerce charges and separate payment totals in BRL."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, event_date, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: event_date
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: orders
+            data_tests: [not_null, nonnegative]
+      - name: olist_payment_methods
+        description: "Payment-row counts and values without collapsing multi-payment orders."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, payment_method, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: payment_method
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: payment_amount
+            data_tests: [not_null, nonnegative]
+      - name: olist_data_quality
+        description: "Aggregated benchmark defects, completeness observations, reconciliation signals, and business outcomes."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, code]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: code
+            data_tests: [not_null]
+          - name: issue_count
+            data_tests: [not_null, nonnegative]
+      - name: olist_economic_completeness
+        description: "Explicit Olist economics incompleteness; no profit, COGS, or attribution is fabricated."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, currency, economic_status]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: currency
+            data_tests: [not_null]
+          - name: economic_status
+            data_tests: [not_null]

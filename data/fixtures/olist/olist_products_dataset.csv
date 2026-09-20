@@ -1,0 +1,4 @@
+product_id,product_category_name,product_name_lenght,product_description_lenght,product_photos_qty,product_weight_g,product_length_cm,product_height_cm,product_width_cm
+p1,beleza_saude,20,100,1,500,20,10,15
+p2,,10,50,1,300,10,5,8
+p3,beleza_saude,18,80,2,700,25,12,20

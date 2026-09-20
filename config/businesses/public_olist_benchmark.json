@@ -1,0 +1,15 @@
+{
+  "business_id": "public_olist_benchmark",
+  "business_name": "Olist Public Real-World Benchmark",
+  "status": "ACTIVE",
+  "timezone": "America/Sao_Paulo",
+  "currency": "BRL",
+  "country": "BR",
+  "enabled_sources": ["olist_public_files"],
+  "reporting_timezone": "America/Sao_Paulo",
+  "metadata": {
+    "benchmark": true,
+    "dataset": "olist_public_v1",
+    "local_data_only": true
+  }
+}

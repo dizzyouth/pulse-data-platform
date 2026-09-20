@@ -29,6 +29,11 @@ EXPECTED_SOURCES = {
     "business_economics_daily",
     "business_economics_cohort",
     "attributed_campaign_economics",
+    "olist_orders_by_status",
+    "olist_commerce_daily",
+    "olist_payment_methods",
+    "olist_data_quality",
+    "olist_economic_completeness",
 }
 EXPECTED_MARTS = {
     "revenue_by_day",
@@ -50,6 +55,11 @@ EXPECTED_MARTS = {
     "economics_daily",
     "campaign_economics",
     "cod_economics",
+    "olist_orders_by_status",
+    "olist_commerce_daily",
+    "olist_payment_methods",
+    "olist_data_quality",
+    "olist_economic_completeness",
 }
 
 

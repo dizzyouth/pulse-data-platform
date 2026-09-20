@@ -2433,3 +2433,111 @@ Deliberate next steps are production economics adapters and checkpointing,
 captured-payment/refund enrichment, more granular settlement allocations, and
 accounting/FX layers with their own explicit contracts. Complex attribution,
 incrementality, budgeting, and recommendations remain outside Phase 6.3.
+
+## Phase 6.4A — Olist public real-world benchmark
+
+Phase 6.4A tests whether Pulse generalizes to an external commerce dataset that
+was not designed for its contracts. The benchmark is local-only, offline, and
+registered as the isolated `public_olist_benchmark` business. Its reference is
+the [Brazilian E-Commerce Public Dataset by Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce);
+the repository neither downloads nor redistributes it.
+
+Put the untouched public CSV files in `data/public/olist/`. That directory is
+covered by the broad `data/*` ignore rule. The committed manifest is
+`config/benchmarks/olist.json`; CI uses only the tiny synthetic schema/edge-case
+fixture in `data/fixtures/olist/`. The initial benchmark consumes orders, order
+items, payments, products, sellers, customers, and category translation. It
+intentionally defers reviews (especially raw free text) and the one-million-row
+geolocation table. Silver customers retain only source `customer_id` and the
+pseudonymous `customer_unique_id`; precise location, street, ZIP, city,
+latitude/longitude, and review text are not projected.
+
+### Architecture and mapping
+
+`OlistSourceAdapter` implements the existing `SourceAdapter` shape and wraps
+every native CSV row in an `IngestionEnvelope` with business/source identity,
+source filename, deterministic record identity, schema version, extraction
+time, and native payload. It never rewrites an input CSV. The adapter then uses
+the existing `CommerceOrder`, `OrderLine`, `OperationalEvent`, Operations Gold,
+and Economics Gold contracts in fixture compatibility mode. The full benchmark
+uses the same mapping and a reduced-memory aggregate path; `--core-compatibility` makes
+the large in-memory canonical projection explicit for profiling.
+
+The canonical order amount is `sum(item.price) + sum(item.freight_value)` and is
+named `commerce_calculated_total`. `price` remains merchandise value and
+`freight_value` remains a customer-facing freight charge. It is not merchant
+shipping cost. `payment_value` is retained at payment-row grain and separately
+aggregated as `payment_total`; its difference from the commerce amount is a
+reconciliation signal, not an automatic corruption verdict. Multiple items,
+sellers, products, and payment rows are independently aggregated before they
+reach order grain, preventing fanout.
+
+Olist payment methods are source payment facts. In particular, `boleto` is not
+COD. The adapter creates no cash-collection or remittance facts. Currency is
+explicitly BRL per benchmark configuration and no FX conversion occurs.
+
+Provider-native `order_status` is always retained. Current-state mapping is
+limited to `created -> CREATED`, `approved -> CONFIRMED`, `shipped -> SHIPPED`,
+`delivered -> DELIVERED`, and `canceled -> CANCELLED`. `invoiced`, `processing`,
+and `unavailable` remain unmapped because the canonical lifecycle has no safe
+equivalent. Event history contains only evidenced milestones: purchase,
+approval, carrier handoff, and customer delivery. Estimated delivery is a
+promise used for lateness analysis, never an actual event. Snapshot cancellation
+has no timestamp in Olist, so no invented cancellation event time is emitted.
+
+Products remain valid without a category. Portuguese category labels and their
+English translation are both retained when available. Sellers stay at line
+grain; no arbitrary order-level seller is chosen. Orders with no lines remain
+valid order facts and receive a completeness observation.
+
+Olist provides no product COGS, actual merchant shipping cost, ad spend,
+order-level attribution, COD collection, or remittance. The economics output is
+therefore `INCOMPLETE_COSTS`, exposes absent attribution separately, and never
+calculates profit or complete contribution. A generic core correction made in
+this phase ensures that zero-line orders cannot accidentally appear COGS
+complete.
+
+Data quality separates defects from business outcomes. Delivery after the
+estimate is `BUSINESS_OUTCOME`; delivery before purchase, delivery before
+carrier handoff, and carrier handoff before approval are timestamp defects with
+different severities. Missing downstream timestamps are interpreted against
+native status. Other checks cover deterministic-grain duplicates, all five
+foreign-key relationships, parsing, negative money, delivered orders missing
+actual delivery, missing product category, missing lines/payments, and payment
+reconciliation at explicit `0.01` and `1.00` thresholds. Bronze accepts real
+anomalies without globally failing ingestion.
+
+### Commands and outputs
+
+Run from the repository root:
+
+```powershell
+python -m src.benchmarks.olist validate --fixture
+python -m src.benchmarks.olist dry-run --fixture
+python -m src.benchmarks.olist benchmark --fixture
+
+python -m src.benchmarks.olist validate
+python -m src.benchmarks.olist profile
+python -m src.benchmarks.olist benchmark --enforce-acceptance
+python -m src.warehouse.load_olist_benchmark load
+```
+
+`validate` checks required files and exact headers. `profile` counts source rows
+without normalizing. `dry-run` runs normalization, quality, reconciliation, and
+analytics without writing. `benchmark` writes replayable JSONL Bronze, Silver,
+Gold, quality, and timing artifacts under ignored
+`data/benchmarks/olist/{fixture|full}`. Missing full files produce an explicit
+local-download message; fixture mode never depends on `data/public/olist`.
+
+The optional PostgreSQL loader replaces only rows for
+`public_olist_benchmark` in five isolated `analytics.olist_*` tables. dbt exposes
+fanout-safe Olist status, daily commerce, payment method, quality, and economic
+completeness marts with business-aware grains and currency checks. Metabase
+provisions a separate **Pulse Olist Benchmark** dashboard with a business
+filter; existing Marketplace, Operations, and Economics dashboards remain
+unchanged.
+
+The benchmark is not accounting, attribution, geography/text analytics, COD,
+or ML training. A later Phase 6.4B can add a streaming/partitioned canonical
+writer, review-score-only analytics, or a separate privacy-reviewed geography
+performance benchmark without widening the Phase 6.4A contracts.

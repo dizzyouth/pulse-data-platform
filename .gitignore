@@ -35,6 +35,8 @@ data/fixtures/*
 !data/fixtures/operations/*.json
 !data/fixtures/economics/
 !data/fixtures/economics/*.json
+!data/fixtures/olist/
+!data/fixtures/olist/*.csv
 
 # Logs
 logs/

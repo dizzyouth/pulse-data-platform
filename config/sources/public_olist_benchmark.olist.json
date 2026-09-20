@@ -1,0 +1,16 @@
+{
+  "source_type": "commerce_dataset",
+  "source_id": "olist_public_files",
+  "enabled": true,
+  "business_id": "public_olist_benchmark",
+  "ingestion_mode": "file",
+  "schedule": "0 0 * * *",
+  "schema_version": "commerce_dataset_v1",
+  "credential_ref": "OLIST_LOCAL_DATASET",
+  "metadata": {
+    "adapter": "olist_public",
+    "dataset_root": "data/public/olist",
+    "manifest": "config/benchmarks/olist.json",
+    "network_access": false
+  }
+}

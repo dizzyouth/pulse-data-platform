@@ -234,6 +234,18 @@ _OPERATION_EVENT_FIELDS = {
 }
 
 CONTRACTS.update({
+    ("commerce_dataset", "commerce_dataset_v1"): SourceContract(
+        source_type="commerce_dataset", schema_version="commerce_dataset_v1",
+        fields={
+            "source_file": FieldContract(types=(str,)),
+            "table": FieldContract(types=(str,)),
+            "record_key": FieldContract(types=(str,)),
+            "source_observed_at_utc": FieldContract(types=(str,)),
+            "native_record": FieldContract(types=(dict,)),
+        },
+        unique_grain=("table", "record_key"), source_timestamp="source_observed_at_utc",
+        grain_name="external_dataset_record",
+    ),
     ("commerce_orders", "commerce_orders_v1"): SourceContract(
         source_type="commerce_orders", schema_version="commerce_orders_v1",
         fields={
@@ -379,7 +391,7 @@ SUPPORTED_SOURCE_TYPES = frozenset(
     {"shopify", "meta_ads", "tiktok_ads", "google_ads", "generic_ads", "csv_manual",
      "commerce_orders", "confirmation_events", "fulfillment_events", "delivery_events",
      "cod_collections", "remittances", "product_costs", "variable_cost_events",
-     "attribution_links"}
+     "attribution_links", "commerce_dataset"}
 )
 
 

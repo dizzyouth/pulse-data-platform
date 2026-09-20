@@ -278,3 +278,63 @@ models:
         data_tests: [not_null]
       - name: remittance_gap
         data_tests: [not_null, nonnegative]
+  - name: olist_orders_by_status
+    description: "Olist native status distribution isolated to the benchmark business."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, native_status]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: native_status
+        data_tests: [not_null]
+      - name: order_count
+        data_tests: [not_null, nonnegative]
+  - name: olist_commerce_daily
+    description: "Fanout-safe Olist daily merchandise, customer freight, and payment measures."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, event_date, currency]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: orders
+        data_tests: [not_null, nonnegative]
+  - name: olist_payment_methods
+    description: "Olist payment rows by native method; boleto is not COD."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, payment_method, currency]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: payment_amount
+        data_tests: [not_null, nonnegative]
+  - name: olist_data_quality
+    description: "Classified Olist benchmark observations."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, code]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: code
+        data_tests: [not_null]
+      - name: issue_count
+        data_tests: [not_null, nonnegative]
+  - name: olist_economic_completeness
+    description: "Proof that unavailable COGS and attribution remain explicitly incomplete."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, currency, economic_status]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: economic_status
+        data_tests: [not_null]

@@ -332,6 +332,9 @@ def _average(values):
 def build_gold_rows(silver):
     orders = silver["commerce_orders"]
     raw_events = silver["operational_events"]
+    # Index once.  Looking up the raw event metadata by scanning the complete
+    # event history for every effective event is quadratic on real datasets.
+    raw_events_by_id = {row["event_id"]: row for row in raw_events}
     objects = [_event_object({name: row[name] for name in OperationalEvent.__dataclass_fields__})
                for row in raw_events]
     effective = event_latest_revisions(objects)
@@ -372,9 +375,11 @@ def build_gold_rows(silver):
             "collection_status": collection.canonical_status.value if collection else None,
             "remittance_status": remittance.canonical_status.value if remittance else None,
             "confirmed_at": confirmed_at, "shipped_at": shipped_at, "delivered_at": delivered_at,
-            "delivery_attempts": sum(e.source_type == "delivery_events" and
-                                     any(r["event_id"] == e.event_id and r.get("attempt_number") is not None
-                                         for r in raw_events) for e in history),
+            "delivery_attempts": sum(
+                e.source_type == "delivery_events"
+                and raw_events_by_id[e.event_id].get("attempt_number") is not None
+                for e in history
+            ),
             "shipment_count": len({row["shipment_id"] for row in shipments[key]}),
             "cash_expected": sum(row["cash_expected"] for row in collections[key]),
             "cash_collected": sum(row["cash_collected"] for row in collections[key]),
@@ -394,7 +399,7 @@ def build_gold_rows(silver):
         attempts = 0
         for event in history:
             statuses[event.canonical_status].add(event.order_id)
-            attempts += any(row["event_id"] == event.event_id and row.get("attempt_number") is not None for row in raw_events)
+            attempts += raw_events_by_id[event.event_id].get("attempt_number") is not None
         cash = sum(row["cash_collected"] for row in silver["cash_collections"]
                    if row["business_id"] == key[0] and row["collected_at"] and row["collected_at"].date() == key[1]
                    and row["collection_currency"] == key[3])
@@ -447,8 +452,8 @@ def build_gold_rows(silver):
         delivered = [m for m in shipped if has(OperationalStatus.DELIVERED, m[1])]
         refused = [m for m in shipped if has(OperationalStatus.REFUSED, m[1])]
         returned = [m for m in delivered if has(OperationalStatus.RETURNED_TO_ORIGIN, m[1])]
-        attempts = sum(sum(any(row["event_id"] == event.event_id and row.get("attempt_number") is not None
-                               for row in raw_events) for event in events)
+        attempts = sum(sum(raw_events_by_id[event.event_id].get("attempt_number") is not None
+                           for event in events)
                        for _, events in shipped)
         rates = operational_kpis(eligible_orders=0, confirmed_orders=0, shipped_orders=len(shipped),
             delivered_orders=len(delivered), refused_orders=len(refused), returned_orders=len(returned),

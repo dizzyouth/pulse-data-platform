@@ -111,6 +111,14 @@ ADAPTERS = {"shopify": MockShopifyAdapter, "meta_ads": MockMetaAdsAdapter,
 
 
 def adapter_for(config: SourceConfig):
+    if config.source_type == "commerce_dataset" and config.metadata.get("adapter") == "olist_public":
+        from pathlib import Path
+        from src.benchmarks.olist import OlistSourceAdapter, PROJECT_ROOT
+
+        root = Path(str(config.metadata.get("dataset_root", "data/public/olist")))
+        if not root.is_absolute():
+            root = PROJECT_ROOT / root
+        return OlistSourceAdapter(root, config=config)
     if config.source_type in {"product_costs", "variable_cost_events", "attribution_links"}:
         from src.economics.adapters import economics_adapter_for
 

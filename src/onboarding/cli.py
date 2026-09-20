@@ -64,13 +64,24 @@ def main(argv=None):
             health = adapter.healthcheck()
             payload = {"business_id": args.business_id, "source_id": args.source_id,
                        **asdict(health)}
-            if config.metadata.get("adapter") != "admin_api":
+            if config.source_type == "commerce_dataset" and health.healthy:
+                payload["input_rows"] = {
+                    table: sum(1 for _ in adapter.rows(table))
+                    for table in adapter.manifest.required_files
+                }
+                payload["record_count"] = sum(payload["input_rows"].values())
+            elif config.metadata.get("adapter") != "admin_api":
                 payload["record_count"] = len(adapter.extract()) if health.healthy else 0
             success = health.healthy
         elif args.command == "extract":
             if args.limit is not None and not args.dry_run:
                 raise ValueError("--limit is restricted to --dry-run so a timestamp tie cannot strand records")
             config = _source(registry, args.business_id, args.source_id)
+            if config.source_type == "commerce_dataset":
+                raise ValueError(
+                    "Commerce dataset extraction is benchmark-managed; use "
+                    "python -m src.benchmarks.olist dry-run or benchmark"
+                )
             if config.source_type in {"product_costs", "variable_cost_events", "attribution_links"}:
                 if not args.dry_run:
                     raise ValueError(

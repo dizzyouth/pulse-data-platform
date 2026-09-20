@@ -40,7 +40,7 @@ class DashboardContractsTests(unittest.TestCase):
                          {(name, "silver") for name in ("product_costs", "cost_components", "attribution_links")} |
                          {(name, layer) for name in ECONOMICS_GRAINS for layer in ("gold", "analytics")})
 
-    def test_main_provisions_both_dashboards(self):
+    def test_main_provisions_all_dashboards(self):
         from bi import setup_metabase as setup
         with patch.object(setup, "_request", return_value={}), patch.object(setup, "_login", return_value="session"), \
              patch.object(setup, "_ensure_warehouse", return_value=123), patch.object(setup, "_verify_marts"), \
@@ -48,12 +48,14 @@ class DashboardContractsTests(unittest.TestCase):
              patch.object(setup, "_ensure_marketing_dashboard") as marketing, \
              patch.object(setup, "_ensure_operations_dashboard") as operations, \
              patch.object(setup, "_ensure_economics_dashboard") as economics, \
+             patch.object(setup, "_ensure_olist_dashboard") as olist, \
              patch.object(dashboard, "ensure_dashboard", return_value=999) as health:
             self.assertEqual(setup.main(), 0)
             marketplace.assert_called_once_with("session", 123)
             marketing.assert_called_once_with("session", 123)
             operations.assert_called_once_with("session", 123)
             economics.assert_called_once_with("session", 123)
+            olist.assert_called_once_with("session", 123)
             self.assertEqual(health.call_args.args[2], 123)
 
     def test_queries_are_select_only_and_filters_match_semantics(self):

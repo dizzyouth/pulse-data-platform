@@ -385,7 +385,10 @@ def build_order_economics(operations_silver, operations_gold, economics_silver,
                 allocated_spend += marketing["spend"] * link["attribution_weight"] / denominator
         marketing_currency = next(iter(marketing_currencies)) if len(marketing_currencies) == 1 else None
         currency_compatible = bool(order_links) and marketing_currency == order["currency"]
-        cogs_complete = missing == 0
+        # No lines means there is no evidence that product costs are complete.
+        # This matters for valid order facts whose source cannot supply line
+        # detail (for example cancelled or unavailable external orders).
+        cogs_complete = bool(lines[key]) and missing == 0
         recognized = (state["cash_collected"] if order["payment_type"] == "cod" and
                       state["cash_collected"] > 0 else order["order_value"] if delivered else 0.0)
         contribution = recognized - variable_cost if cogs_complete else None

@@ -29,6 +29,11 @@ EXPECTED_MARTS = {
     "marts.economics_daily",
     "marts.campaign_economics",
     "marts.cod_economics",
+    "marts.olist_orders_by_status",
+    "marts.olist_commerce_daily",
+    "marts.olist_payment_methods",
+    "marts.olist_data_quality",
+    "marts.olist_economic_completeness",
 }
 
 
@@ -67,7 +72,7 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_bi_queries_reference_all_and_only_dbt_marts(self) -> None:
         query_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
-            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries")
+            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries", "olist_queries")
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
         for mart in EXPECTED_MARTS:
@@ -126,6 +131,14 @@ class MetabaseConfigurationTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8").lower()
             self.assertIn("business_id", text)
             self.assertNotIn("net_profit", text)
+
+    def test_olist_dashboard_is_separate_and_business_filtered(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn("Pulse Olist Benchmark", source)
+        queries = list((PROJECT_ROOT / "bi" / "olist_queries").glob("*.sql"))
+        self.assertEqual(len(queries), 5)
+        for path in queries:
+            self.assertIn("business_id", path.read_text(encoding="utf-8").lower())
 
 
 class MetabaseProvisioningTests(unittest.TestCase):
