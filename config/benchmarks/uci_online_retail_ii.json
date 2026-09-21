@@ -1,0 +1,58 @@
+{
+  "dataset_name": "UCI Online Retail II",
+  "dataset_reference": "https://archive.ics.uci.edu/dataset/502/online+retail+ii",
+  "dataset_version": "Online Retail II workbook",
+  "benchmark_id": "uci_online_retail_ii_v1",
+  "business_id": "public_uci_online_retail_ii",
+  "source_id": "uci_online_retail_ii",
+  "expected_local_path": "data/public/uci_online_retail_ii/online_retail_II.xlsx",
+  "fixture_path": "data/fixtures/uci_online_retail_ii",
+  "currency": "GBP",
+  "source_timezone": "Europe/London",
+  "date_system": "excel_1900",
+  "purpose": "Validate provider-neutral commerce portability from a flat signed invoice-line ledger without weakening canonical commerce invariants.",
+  "semantic_limitations": [
+    "Invoice identity is worksheet-scoped because raw Invoice values repeat across worksheets.",
+    "Cancellation invoices do not identify an original invoice and are retained as native reversal documents.",
+    "Negative quantities are not assumed to be cancellations.",
+    "Price is customer-facing unit price, not COGS.",
+    "No fulfillment, COD, remittance, marketing attribution, merchant cost, or profit semantics are available."
+  ],
+  "columns": [
+    "Invoice",
+    "StockCode",
+    "Description",
+    "Quantity",
+    "InvoiceDate",
+    "Price",
+    "Customer ID",
+    "Country"
+  ],
+  "worksheets": {
+    "Year 2009-2010": {
+      "fixture_file": "Year_2009_2010.csv",
+      "expected_rows": 525461
+    },
+    "Year 2010-2011": {
+      "fixture_file": "Year_2010_2011.csv",
+      "expected_rows": 541910
+    }
+  },
+  "acceptance": {
+    "total_rows": 1067371,
+    "distinct_raw_invoice_ids": 53628,
+    "worksheet_scoped_invoices": 54716,
+    "raw_invoice_ids_reused_across_worksheets": 1088,
+    "worksheet_scoped_cancellation_invoices": 8428,
+    "distinct_raw_cancellation_invoice_ids": 8292,
+    "negative_quantity_rows": 22950,
+    "non_c_negative_quantity_rows": 3457,
+    "positive_quantity_rows_on_c_invoice": 1,
+    "zero_quantity_rows": 0,
+    "negative_price_rows": 5,
+    "zero_price_rows": 6202,
+    "missing_customer_id_rows": 243007,
+    "missing_description_rows": 4382,
+    "stripped_c_invoice_direct_matches": 0
+  }
+}

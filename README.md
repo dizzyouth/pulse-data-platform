@@ -2541,3 +2541,93 @@ The benchmark is not accounting, attribution, geography/text analytics, COD,
 or ML training. A later Phase 6.4B can add a streaming/partitioned canonical
 writer, review-score-only analytics, or a separate privacy-reviewed geography
 performance benchmark without widening the Phase 6.4A contracts.
+
+## Phase 6.4B — UCI Online Retail II portability benchmark
+
+Phase 6.4B tests a different portability boundary from Olist. Olist is a
+relational order/item/payment dataset; UCI Online Retail II is a flat, signed
+invoice-line ledger. The existing `commerce_dataset_v1` envelope supports both
+shapes without weakening the positive commercial-quantity invariants of
+`CommerceOrder` and `OrderLine`. Signed-ledger normalization and classification
+remain in the benchmark layer; no new generic core contract is introduced.
+
+The untouched workbook belongs at
+`data/public/uci_online_retail_ii/online_retail_II.xlsx`. It is ignored,
+read-only, unavailable to CI, and parsed offline with the Python standard
+library. Its worksheets are `Year 2009-2010` and `Year 2010-2011`; both contain
+`Invoice`, `StockCode`, `Description`, `Quantity`, `InvoiceDate`, `Price`,
+`Customer ID`, and `Country`. CI uses only the small synthetic CSV files under
+`data/fixtures/uci_online_retail_ii/`.
+
+### Identity and source semantics
+
+Raw `Invoice` is not globally unique: 1,088 values occur in both worksheets.
+Canonical invoice identity is therefore `source + worksheet + raw Invoice`.
+Line identity additionally includes the deterministic source row number, so
+repeated StockCodes remain distinct. Raw invoice, worksheet, and row lineage
+are retained.
+
+An Invoice beginning with `C` is a native cancellation/reversal document.
+Removing `C` does not identify an original invoice, so the benchmark creates
+no reversal-to-order link and does not mutate another order to `CANCELLED`.
+Negative quantity is also not treated as cancellation: many non-C rows are
+inventory or operational-style adjustments. Positive quantity on a C invoice
+is retained and reported as unusual source behavior.
+
+Each line has a benchmark semantic classification for merchandise sales,
+cancellation/reversal rows, non-C negative adjustments, non-merchandise
+charges, zero-price rows, or unknown special rows. A separate StockCode
+classification identifies products, postage/charges, discounts, manual
+adjustments, bank charges, test/internal codes, and unknown special codes.
+`POST` is customer-facing postage context, never merchant shipping cost. Only
+positive ordinary merchandise lines enter the safe canonical commerce
+projection.
+
+Customer ID is optional and pseudonymous; missing Customer ID never rejects an
+invoice. No name, email, phone, street, postal address, or geography beyond the
+source Country is inferred. Price is customer-facing unit price, not COGS.
+Signed line value is always `Quantity * Price` without `abs()`. Positive
+merchandise, cancellation, adjustment, non-merchandise, and net ledger values
+remain separately named. GBP is explicit and no FX conversion is performed.
+
+The source has no trustworthy fulfillment, shipment, delivery, courier, COD,
+remittance, marketing attribution, merchant costs, or accounting expenses.
+None are fabricated. Economics remains `INCOMPLETE_COSTS`; profit and net
+margin are not calculated.
+
+### Modes, outputs, and commands
+
+Run the deterministic fixture path:
+
+```powershell
+python -m src.benchmarks.uci_online_retail_ii validate --fixture
+python -m src.benchmarks.uci_online_retail_ii dry-run --fixture
+python -m src.benchmarks.uci_online_retail_ii benchmark --fixture
+```
+
+Run the full local workbook benchmark:
+
+```powershell
+python -m src.benchmarks.uci_online_retail_ii validate
+python -m src.benchmarks.uci_online_retail_ii profile
+python -m src.benchmarks.uci_online_retail_ii benchmark --enforce-acceptance
+python -m src.warehouse.load_uci_online_retail_ii load
+```
+
+Bronze retains every native row and deterministic lineage. Silver retains
+every signed ledger entry, scoped invoice identity, optional customer,
+invoice/line classifications, and projection eligibility. Focused Gold outputs
+cover daily values, invoice summaries, classifications, country, DQ, economic
+completeness, and anomaly behavior. Generated outputs live under ignored
+`data/benchmarks/uci_online_retail_ii/{fixture|full}`.
+
+The warehouse loader replaces only `public_uci_online_retail_ii` rows in six
+isolated `analytics.uci_*` tables. dbt preserves GBP, scoped grains,
+signed-value reconciliation, and non-fanout counts. The manual
+`pulse_uci_online_retail_ii_benchmark` DAG has no schedule. The small **Pulse
+UCI Retail Benchmark** dashboard uses ledger terminology and never labels net
+ledger value as profit.
+
+Deliberate limitations: no reversal-to-original relationship is inferred, not
+every special StockCode is assigned a business meaning, no fulfillment events
+are constructed, and economics remains explicitly incomplete.

@@ -34,6 +34,12 @@ EXPECTED_MARTS = {
     "marts.olist_payment_methods",
     "marts.olist_data_quality",
     "marts.olist_economic_completeness",
+    "marts.uci_retail_daily",
+    "marts.uci_invoice_summary",
+    "marts.uci_line_classification",
+    "marts.uci_country_distribution",
+    "marts.uci_data_quality",
+    "marts.uci_economic_completeness",
 }
 
 
@@ -72,7 +78,7 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_bi_queries_reference_all_and_only_dbt_marts(self) -> None:
         query_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
-            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries", "olist_queries")
+            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries", "olist_queries", "uci_queries")
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
         for mart in EXPECTED_MARTS:
@@ -139,6 +145,17 @@ class MetabaseConfigurationTests(unittest.TestCase):
         self.assertEqual(len(queries), 5)
         for path in queries:
             self.assertIn("business_id", path.read_text(encoding="utf-8").lower())
+
+    def test_uci_dashboard_is_small_separate_and_uses_ledger_language(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn("Pulse UCI Retail Benchmark", source)
+        self.assertIn("Daily signed ledger values", source)
+        queries = list((PROJECT_ROOT / "bi" / "uci_queries").glob("*.sql"))
+        self.assertEqual(len(queries), 8)
+        for path in queries:
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertIn("business_id", text)
+            self.assertNotIn("net_profit", text)
 
 
 class MetabaseProvisioningTests(unittest.TestCase):

@@ -156,6 +156,12 @@ def _verify_marts(session_id: str, database_id: int) -> None:
         UNION ALL SELECT 'olist_payment_methods', count(*) FROM marts.olist_payment_methods
         UNION ALL SELECT 'olist_data_quality', count(*) FROM marts.olist_data_quality
         UNION ALL SELECT 'olist_economic_completeness', count(*) FROM marts.olist_economic_completeness
+        UNION ALL SELECT 'uci_retail_daily', count(*) FROM marts.uci_retail_daily
+        UNION ALL SELECT 'uci_invoice_summary', count(*) FROM marts.uci_invoice_summary
+        UNION ALL SELECT 'uci_line_classification', count(*) FROM marts.uci_line_classification
+        UNION ALL SELECT 'uci_country_distribution', count(*) FROM marts.uci_country_distribution
+        UNION ALL SELECT 'uci_data_quality', count(*) FROM marts.uci_data_quality
+        UNION ALL SELECT 'uci_economic_completeness', count(*) FROM marts.uci_economic_completeness
         ORDER BY mart
     """
     result = _request(
@@ -172,8 +178,8 @@ def _verify_marts(session_id: str, database_id: int) -> None:
     if result.get("status") != "completed":
         raise RuntimeError(f"Metabase mart verification failed: {result.get('error', result.get('status'))}")
     rows = result.get("data", {}).get("rows", [])
-    if len(rows) != 24 or any(int(row[1]) <= 0 for row in rows):
-        raise RuntimeError(f"Expected twenty-four non-empty dbt marts, received: {rows!r}")
+    if len(rows) != 30 or any(int(row[1]) <= 0 for row in rows):
+        raise RuntimeError(f"Expected thirty non-empty dbt marts, received: {rows!r}")
     print("Metabase queried marts successfully: " + ", ".join(f"{r[0]}={r[1]}" for r in rows))
 
 
@@ -566,6 +572,67 @@ def _ensure_olist_dashboard(session_id: str, database_id: int) -> None:
     print(f"Olist benchmark dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
 
 
+def _ensure_uci_dashboard(session_id: str, database_id: int) -> None:
+    """Reconcile the compact UCI portability benchmark dashboard."""
+    def api(method: str, path: str, payload=None):
+        return _request(method, path, payload, session_id)
+
+    collection = _unique(api("GET", "/api/collection"), "Pulse UCI Retail Benchmark")
+    if collection is None:
+        collection = api("POST", "/api/collection", {"name": "Pulse UCI Retail Benchmark"})
+    collection_id = collection["id"]
+    items = api("GET", f"/api/collection/{collection_id}/items").get("data", [])
+    specs = (
+        ("daily_invoice_volume", "Daily invoice volume", "line"),
+        ("daily_ledger_value", "Daily signed ledger values", "line"),
+        ("anonymous_customer_rate", "Anonymous customer rate", "line"),
+        ("invoice_summary", "Worksheet-scoped invoice semantics", "table"),
+        ("line_classification", "Source-line classifications", "bar"),
+        ("country_distribution", "Country distribution", "bar"),
+        ("data_quality", "Benchmark data-quality observations", "table"),
+        ("economic_completeness", "Economics completeness", "table"),
+    )
+    cards = []
+    for filename, title, display in specs:
+        base = (Path(__file__).parent / "uci_queries" / f"{filename}.sql").read_text().rstrip(";\n")
+        query_sql = "SELECT * FROM (\n" + base + "\n) AS uci_card\nWHERE 1=1\n[[AND business_id = {{business}}]]"
+        tags = {"business": {"id": "business", "name": "business", "display-name": "Business",
+                             "type": "text", "required": False}}
+        query = {"database": database_id, "type": "native",
+                 "native": {"query": query_sql, "template-tags": tags}}
+        result = api("POST", "/api/dataset", {**query, "parameters": []})
+        if result.get("status") != "completed":
+            raise RuntimeError(f"UCI BI query {filename} failed: {result.get('error', result.get('status'))}")
+        payload = {"name": title, "collection_id": collection_id, "display": display,
+                   "dataset_query": query, "visualization_settings": {}}
+        existing = _unique([item for item in items if item.get("model") == "card"], title)
+        card = api("PUT", f"/api/card/{existing['id']}", payload) if existing else api("POST", "/api/card", payload)
+        cards.append(card)
+
+    title = "Pulse UCI Retail Benchmark"
+    dashboard = _unique([item for item in items if item.get("model") == "dashboard"], title)
+    if dashboard is None:
+        dashboard = api("POST", "/api/dashboard", {"name": title, "collection_id": collection_id})
+    dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
+    dashcards = dashboard.get("dashcards", [])
+    for index, card in enumerate(cards):
+        mappings = [{"parameter_id": "business", "card_id": card["id"],
+                     "target": ["variable", ["template-tag", "business"]]}]
+        existing = next((item for item in dashcards if item.get("card_id") == card["id"]), None)
+        if existing:
+            existing["parameter_mappings"] = mappings
+        else:
+            dashcards.append({"id": -(500 + index), "card_id": card["id"],
+                              "row": (index // 2) * 8, "col": (index % 2) * 12,
+                              "size_x": 12, "size_y": 8, "parameter_mappings": mappings,
+                              "visualization_settings": {}})
+    parameter = {"id": "business", "name": "Business", "slug": "business", "type": "string/="}
+    others = [item for item in dashboard.get("parameters", []) if item["id"] != "business"]
+    api("PUT", f"/api/dashboard/{dashboard['id']}",
+        {"dashcards": dashcards, "parameters": [parameter, *others]})
+    print(f"UCI retail benchmark dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
+
+
 def main() -> int:
     properties = _request("GET", "/api/session/properties")
     setup_token = properties.get("setup-token")
@@ -579,6 +646,7 @@ def main() -> int:
     _ensure_operations_dashboard(session_id, database_id)
     _ensure_economics_dashboard(session_id, database_id)
     _ensure_olist_dashboard(session_id, database_id)
+    _ensure_uci_dashboard(session_id, database_id)
     if __package__:
         from .monitoring_dashboard import ensure_dashboard
     else:

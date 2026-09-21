@@ -103,7 +103,7 @@ class SampleRegistryTests(unittest.TestCase):
                           "commerce_orders", "confirmation_events", "fulfillment_events", "delivery_events",
                           "cod_collections", "remittances", "product_costs",
                           "variable_cost_events", "attribution_links", "commerce_dataset"})
-        self.assertEqual(len({item.task_id for item in descriptors}), 30)
+        self.assertEqual(len({item.task_id for item in descriptors}), 31)
         self.assertTrue(all(item.schema_version.endswith("_v1") for item in descriptors))
 
     def test_multi_business_orders_and_ads_fixture_uses_overlapping_ids_safely(self):

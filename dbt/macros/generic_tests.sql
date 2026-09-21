@@ -28,3 +28,19 @@ from {{ model }}
 where {{ column_name }} is not null
   and ({{ column_name }} < 0 or {{ column_name }} > 1)
 {% endtest %}
+
+{% test uci_daily_signed_reconciliation(model) %}
+select *
+from {{ model }}
+where abs(net_ledger_value - (
+    positive_merchandise_value + cancellation_value + adjustment_value + non_merchandise_value
+)) > 0.000001
+{% endtest %}
+
+{% test uci_invoice_signed_reconciliation(model) %}
+select *
+from {{ model }}
+where abs(net_ledger_value - (
+    positive_merchandise_value + cancellation_value + adjustment_value + non_merchandise_value
+)) > 0.000001
+{% endtest %}

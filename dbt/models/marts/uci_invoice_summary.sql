@@ -1,0 +1,20 @@
+select
+    business_id,
+    scoped_invoice_id,
+    worksheet,
+    raw_invoice_id,
+    native_invoice_type,
+    invoice_at,
+    currency,
+    country,
+    anonymous_customer,
+    line_count,
+    positive_merchandise_value,
+    cancellation_value,
+    adjustment_value,
+    non_merchandise_value,
+    net_ledger_value,
+    commerce_projection_eligible,
+    projected_order_value,
+    projected_line_count
+from {{ source('analytics', 'uci_invoice_summary') }}

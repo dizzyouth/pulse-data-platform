@@ -1,0 +1,16 @@
+{
+  "source_type": "commerce_dataset",
+  "source_id": "uci_online_retail_ii",
+  "enabled": true,
+  "business_id": "public_uci_online_retail_ii",
+  "ingestion_mode": "file",
+  "schedule": "0 0 * * *",
+  "schema_version": "commerce_dataset_v1",
+  "credential_ref": "UCI_ONLINE_RETAIL_II_LOCAL_DATASET",
+  "metadata": {
+    "adapter": "uci_online_retail_ii",
+    "dataset_root": "data/public/uci_online_retail_ii/online_retail_II.xlsx",
+    "manifest": "config/benchmarks/uci_online_retail_ii.json",
+    "network_access": false
+  }
+}

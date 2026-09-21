@@ -49,6 +49,7 @@ class DashboardContractsTests(unittest.TestCase):
              patch.object(setup, "_ensure_operations_dashboard") as operations, \
              patch.object(setup, "_ensure_economics_dashboard") as economics, \
              patch.object(setup, "_ensure_olist_dashboard") as olist, \
+             patch.object(setup, "_ensure_uci_dashboard") as uci, \
              patch.object(dashboard, "ensure_dashboard", return_value=999) as health:
             self.assertEqual(setup.main(), 0)
             marketplace.assert_called_once_with("session", 123)
@@ -56,6 +57,7 @@ class DashboardContractsTests(unittest.TestCase):
             operations.assert_called_once_with("session", 123)
             economics.assert_called_once_with("session", 123)
             olist.assert_called_once_with("session", 123)
+            uci.assert_called_once_with("session", 123)
             self.assertEqual(health.call_args.args[2], 123)
 
     def test_queries_are_select_only_and_filters_match_semantics(self):

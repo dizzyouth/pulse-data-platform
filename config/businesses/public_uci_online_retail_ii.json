@@ -1,0 +1,15 @@
+{
+  "business_id": "public_uci_online_retail_ii",
+  "business_name": "UCI Online Retail II Portability Benchmark",
+  "status": "ACTIVE",
+  "timezone": "Europe/London",
+  "currency": "GBP",
+  "country": "GB",
+  "enabled_sources": ["uci_online_retail_ii"],
+  "reporting_timezone": "Europe/London",
+  "metadata": {
+    "benchmark": true,
+    "dataset": "uci_online_retail_ii_v1",
+    "local_data_only": true
+  }
+}

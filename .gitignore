@@ -37,6 +37,8 @@ data/fixtures/*
 !data/fixtures/economics/*.json
 !data/fixtures/olist/
 !data/fixtures/olist/*.csv
+!data/fixtures/uci_online_retail_ii/
+!data/fixtures/uci_online_retail_ii/*.csv
 
 # Logs
 logs/

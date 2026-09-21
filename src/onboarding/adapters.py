@@ -119,6 +119,17 @@ def adapter_for(config: SourceConfig):
         if not root.is_absolute():
             root = PROJECT_ROOT / root
         return OlistSourceAdapter(root, config=config)
+    if (config.source_type == "commerce_dataset" and
+            config.metadata.get("adapter") == "uci_online_retail_ii"):
+        from pathlib import Path
+        from src.benchmarks.uci_online_retail_ii import (PROJECT_ROOT,
+                                                         UciOnlineRetailAdapter)
+
+        root = Path(str(config.metadata.get(
+            "dataset_root", "data/public/uci_online_retail_ii/online_retail_II.xlsx")))
+        if not root.is_absolute():
+            root = PROJECT_ROOT / root
+        return UciOnlineRetailAdapter(root, config=config)
     if config.source_type in {"product_costs", "variable_cost_events", "attribution_links"}:
         from src.economics.adapters import economics_adapter_for
 

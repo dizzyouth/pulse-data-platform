@@ -80,7 +80,7 @@ def main(argv=None):
             if config.source_type == "commerce_dataset":
                 raise ValueError(
                     "Commerce dataset extraction is benchmark-managed; use "
-                    "python -m src.benchmarks.olist dry-run or benchmark"
+                    "the configured src.benchmarks module in dry-run or benchmark mode"
                 )
             if config.source_type in {"product_costs", "variable_cost_events", "attribution_links"}:
                 if not args.dry_run:

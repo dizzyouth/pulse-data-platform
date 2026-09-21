@@ -34,6 +34,12 @@ EXPECTED_SOURCES = {
     "olist_payment_methods",
     "olist_data_quality",
     "olist_economic_completeness",
+    "uci_retail_daily",
+    "uci_invoice_summary",
+    "uci_line_classification",
+    "uci_country_distribution",
+    "uci_data_quality",
+    "uci_economic_completeness",
 }
 EXPECTED_MARTS = {
     "revenue_by_day",
@@ -60,6 +66,12 @@ EXPECTED_MARTS = {
     "olist_payment_methods",
     "olist_data_quality",
     "olist_economic_completeness",
+    "uci_retail_daily",
+    "uci_invoice_summary",
+    "uci_line_classification",
+    "uci_country_distribution",
+    "uci_data_quality",
+    "uci_economic_completeness",
 }
 
 

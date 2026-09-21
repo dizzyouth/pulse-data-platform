@@ -340,3 +340,90 @@ sources:
             data_tests: [not_null]
           - name: economic_status
             data_tests: [not_null]
+      - name: uci_retail_daily
+        description: "UCI daily signed-ledger measures at business, date, and GBP grain."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, event_date, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: event_date
+            data_tests: [not_null]
+          - name: currency
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [GBP]
+          - name: invoice_count
+            data_tests: [not_null, nonnegative]
+      - name: uci_invoice_summary
+        description: "One row per worksheet-scoped UCI invoice; raw Invoice alone is not a grain."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, scoped_invoice_id]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: scoped_invoice_id
+            data_tests: [not_null]
+          - name: currency
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [GBP]
+      - name: uci_line_classification
+        description: "Signed UCI line counts and values by benchmark-native semantic classification."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, line_classification, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: line_count
+            data_tests: [not_null, nonnegative]
+          - name: currency
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [GBP]
+      - name: uci_country_distribution
+        description: "UCI invoice and line distribution by source country without address inference."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, country, currency]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: line_count
+            data_tests: [not_null, nonnegative]
+          - name: invoice_count
+            data_tests: [not_null, nonnegative]
+      - name: uci_data_quality
+        description: "Classified UCI portability benchmark observations."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, code]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: issue_count
+            data_tests: [not_null, nonnegative]
+      - name: uci_economic_completeness
+        description: "Explicit proof that UCI price is not COGS and profit is not calculated."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, currency, economic_status]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: currency
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [GBP]
+          - name: economic_status
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [INCOMPLETE_COSTS]

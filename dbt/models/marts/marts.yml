@@ -338,3 +338,88 @@ models:
         data_tests: [not_null]
       - name: economic_status
         data_tests: [not_null]
+  - name: uci_retail_daily
+    description: "Daily UCI invoice and signed-ledger measures; net ledger value is not profit."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, event_date, currency]
+      - uci_daily_signed_reconciliation
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [GBP]
+      - name: invoice_count
+        data_tests: [not_null, nonnegative]
+      - name: anonymous_customer_rate
+        data_tests: [between_zero_and_one]
+  - name: uci_invoice_summary
+    description: "One row per business and worksheet-scoped invoice, preserving native reversal semantics."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, scoped_invoice_id]
+      - uci_invoice_signed_reconciliation
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: scoped_invoice_id
+        data_tests: [not_null]
+      - name: raw_invoice_id
+        data_tests: [not_null]
+      - name: line_count
+        data_tests: [not_null, nonnegative]
+      - name: currency
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [GBP]
+  - name: uci_line_classification
+    description: "Signed ledger values by explicit source-line classification."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, line_classification, currency]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: line_count
+        data_tests: [not_null, nonnegative]
+  - name: uci_country_distribution
+    description: "Source-supplied country context only; no address inference."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, country, currency]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: line_count
+        data_tests: [not_null, nonnegative]
+      - name: invoice_count
+        data_tests: [not_null, nonnegative]
+  - name: uci_data_quality
+    description: "Defects, completeness observations, and source/business semantics kept distinct."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, code]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: issue_count
+        data_tests: [not_null, nonnegative]
+  - name: uci_economic_completeness
+    description: "UCI economics limitations: no COGS, attribution, COD, remittance, or profit."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, currency, economic_status]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [GBP]
+      - name: economic_status
+        data_tests: [not_null]
