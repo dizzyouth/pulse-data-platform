@@ -1,0 +1,46 @@
+{
+  "lightfunnels": [
+    {"Order Id":"LF-001","Item Id":"I-001-A","Sku":"OORCAAW","Phone":"+999000001","Created at":"2026-03-01 10:00:00","Item Price":"199","Order Total":"199","Shipping Country":"Saudi Arabia","UTM Attributes":"{\"utm_source\":\"synthetic-social\",\"utm_campaign\":\"fixture-campaign\"}","Order Custom Data":"compare_at: 398"},
+    {"Order Id":"LF-001","Item Id":"I-001-B","Sku":"OORCAAW","Phone":"+999000001","Created at":"2026-03-01 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-001","Item Id":"I-001-A","Sku":"OORCAAW","Phone":"+999000001","Created at":"2026-03-01 10:00:00","Item Price":"199","Order Total":"199","Shipping Country":"Saudi Arabia","UTM Attributes":"{\"utm_source\":\"synthetic-social\",\"utm_campaign\":\"fixture-campaign\"}","Order Custom Data":"compare_at: 398"},
+    {"Order Id":"LF-002","Item Id":"I-002-A","Sku":"OORCAAWV3","Phone":"+999000002","Created at":"2026-03-02 10:00:00","Order Total":"299","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-002","Item Id":"I-002-B","Sku":"OORCAAWV3","Phone":"+999000002","Created at":"2026-03-02 10:00:00","Order Total":"299","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-002","Item Id":"I-002-C","Sku":"OORCAAWV3","Phone":"+999000002","Created at":"2026-03-02 10:00:00","Order Total":"299","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-002","Item Id":"I-002-D","Sku":"OORCAAWV3","Phone":"+999000002","Created at":"2026-03-02 10:00:00","Order Total":"299","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-003","Item Id":"I-003-A","Sku":"OORCAAWORG","Phone":"+999000003","Created at":"2026-03-03 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-003","Item Id":"I-003-B","Sku":"OORCAAWORG","Phone":"+999000003","Created at":"2026-03-03 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-004","Item Id":"I-004-A","Sku":"OORCAAW","Phone":"+999000004","Created at":"2026-03-04 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-004","Item Id":"I-004-B","Sku":"OORCAAW","Phone":"+999000004","Created at":"2026-03-04 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-005","Item Id":"I-005-A","Sku":"OORCAAW","Phone":"+999000005","Created at":"2026-03-05 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-005","Item Id":"I-005-B","Sku":"OORCAAW","Phone":"+999000005","Created at":"2026-03-05 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-006","Item Id":"I-006-A","Sku":"OORCAAW","Phone":"+999000006","Created at":"2026-03-06 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-006","Item Id":"I-006-B","Sku":"OORCAAW","Phone":"+999000006","Created at":"2026-03-06 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-007","Item Id":"I-007-A","Sku":"OORCAAWV3","Phone":"+999000007","Created at":"2026-03-07 10:00:00","Order Total":"199","Shipping Country":"United Arab Emirates"},
+    {"Order Id":"LF-007","Item Id":"I-007-B","Sku":"OORCAAWV3","Phone":"+999000007","Created at":"2026-03-07 10:00:00","Order Total":"199","Shipping Country":"United Arab Emirates"},
+    {"Order Id":"LF-008","Item Id":"I-008-A","Sku":"OORCAAW","Phone":"+999000008","Created at":"2026-03-08 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-008","Item Id":"I-008-B","Sku":"OORCAAW","Phone":"+999000008","Created at":"2026-03-08 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-009","Item Id":"I-009-A","Sku":"OORCAAW","Phone":"+999000009","Created at":"2026-03-09 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-009","Item Id":"I-009-B","Sku":"OORCAAW","Phone":"+999000009","Created at":"2026-03-09 10:00:00","Order Total":"199","Shipping Country":"Saudi Arabia"},
+    {"Order Id":"LF-010","Item Id":"I-010-A","Sku":"OORCAAWORG","Phone":"+999000010","Created at":"2026-03-10 10:00:00","Order Total":"199","Shipping Country":"Kuwait"},
+    {"Order Id":"LF-010","Item Id":"I-010-B","Sku":"OORCAAWORG","Phone":"+999000010","Created at":"2026-03-10 10:00:00","Order Total":"199","Shipping Country":"Kuwait"}
+  ],
+  "leads": [
+    {"ID":"LEAD-001","Products/Sku":"OORCAAW Quantity: 2","Phone":"+999000001","Status":"Confirmed","Created At":"2026-03-01 11:00:00","Price":"199"},
+    {"ID":"LEAD-002","Products/Sku":"OORCAAWV3 Quantity: 4","Phone":"+999000002","Status":"Confirmed","Created At":"2026-03-02 11:00:00","Price":"299"},
+    {"ID":"LEAD-003","Products/Sku":"OORCAAWORG Quantity: 2","Phone":"+999000003","Status":"Wrong","Created At":"2026-03-03 11:00:00","Price":"199"},
+    {"ID":"LEAD-004","Products/Sku":"OORCAAW Quantity: 2","Phone":"+999000004","Status":"Expired","Created At":"2026-03-04 11:00:00","Price":"199"},
+    {"ID":"LEAD-005","Products/Sku":"OORCAAW Quantity: 2","Phone":"+999000005","Status":"Cancelled price","Created At":"2026-03-05 11:00:00","Price":"199"},
+    {"ID":"LEAD-006","Products/Sku":"OORCAAW Quantity: 2","Phone":"+999000006","Status":"Confirmed","Created At":"2026-03-06 11:00:00","Price":"199"},
+    {"ID":"LEAD-007","Products/Sku":"OORCAAWV3 Quantity: 2","Phone":"+999000007","Status":"Confirmed","Created At":"2026-03-07 11:00:00","Price":"199"},
+    {"ID":"LEAD-008-A","Products/Sku":"OORCAAW Quantity: 2","Phone":"+999000008","Status":"Confirmed","Created At":"2026-03-08 11:00:00","Price":"199"},
+    {"ID":"LEAD-008-B","Products/Sku":"OORCAAW Quantity: 2","Phone":"+999000008","Status":"Confirmed","Created At":"2026-03-08 11:01:00","Price":"199"},
+    {"ID":"LEAD-010","Products/Sku":"OORCAAWORG Quantity: 2","Phone":"+999000010","Status":"Confirmed","Created At":"2026-03-10 11:00:00","Price":"199"}
+  ],
+  "orders": [
+    {"Reference":"COD-001","Lead ID":"LEAD-001","Status":"Delivered","Shipped At":"2026-03-02 08:00:00","Delivered At":"2026-03-04 12:00:00","Returned At":"","Sku":"OORCAAW","Quantity":"2","Shipping Fees":"2.99","Total":"199","Total USD":"53.00","Currency":"SAR","Created At":"2026-03-01 12:00:00","Last Update":"2026-03-04 12:00:00"},
+    {"Reference":"COD-002","Lead ID":"LEAD-002","Status":"Return","Shipped At":"2026-03-03 08:00:00","Delivered At":"","Returned At":"2026-03-08 12:00:00","Sku":"OORCAAWV3","Quantity":"4","Shipping Fees":"2.99","Total":"299","Total USD":"79.00","Currency":"SAR","Created At":"2026-03-02 12:00:00","Last Update":"2026-03-08 12:00:00"},
+    {"Reference":"COD-006","Lead ID":"LEAD-006","Status":"Out of stock","Shipped At":"","Delivered At":"","Returned At":"","Sku":"OORCAAW","Quantity":"2","Shipping Fees":"2.99","Total":"199","Total USD":"53.00","Currency":"SAR","Created At":"2026-03-06 12:00:00","Last Update":"2026-03-06 12:00:00"},
+    {"Reference":"COD-007","Lead ID":"LEAD-007","Status":"Delivered","Shipped At":"2026-03-08 08:00:00","Delivered At":"2026-03-10 12:00:00","Returned At":"","Sku":"OORCAAWV3","Quantity":"1","Shipping Fees":"2.99","Total":"120","Total USD":"32.00","Currency":"AED","Created At":"2026-03-07 12:00:00","Last Update":"2026-03-10 12:00:00"},
+    {"Reference":"COD-010","Lead ID":"LEAD-010","Status":"Delivered","Shipped At":"2026-03-11 08:00:00","Delivered At":"2026-08-02 12:00:00","Returned At":"","Sku":"OORCAAWORG","Quantity":"2","Shipping Fees":"2.99","Total":"20","Total USD":"65.00","Currency":"KWD","Created At":"2026-03-10 12:00:00","Last Update":"2026-08-02 12:00:00"}
+  ]
+}

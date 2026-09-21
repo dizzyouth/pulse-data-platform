@@ -40,6 +40,9 @@ EXPECTED_SOURCES = {
     "uci_country_distribution",
     "uci_data_quality",
     "uci_economic_completeness",
+    "sama_pilot_order_facts",
+    "sama_pilot_identity_resolution",
+    "sama_pilot_data_quality",
 }
 EXPECTED_MARTS = {
     "revenue_by_day",
@@ -72,6 +75,10 @@ EXPECTED_MARTS = {
     "uci_country_distribution",
     "uci_data_quality",
     "uci_economic_completeness",
+    "sama_pilot_funnel",
+    "sama_pilot_order_changes",
+    "sama_pilot_native_economics",
+    "sama_pilot_data_quality",
 }
 
 

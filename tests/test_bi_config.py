@@ -40,6 +40,10 @@ EXPECTED_MARTS = {
     "marts.uci_country_distribution",
     "marts.uci_data_quality",
     "marts.uci_economic_completeness",
+    "marts.sama_pilot_funnel",
+    "marts.sama_pilot_order_changes",
+    "marts.sama_pilot_native_economics",
+    "marts.sama_pilot_data_quality",
 }
 
 
@@ -78,7 +82,7 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_bi_queries_reference_all_and_only_dbt_marts(self) -> None:
         query_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
-            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries", "olist_queries", "uci_queries")
+            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries", "olist_queries", "uci_queries", "sama_pilot_queries")
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
         for mart in EXPECTED_MARTS:
@@ -156,6 +160,46 @@ class MetabaseConfigurationTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8").lower()
             self.assertIn("business_id", text)
             self.assertNotIn("net_profit", text)
+
+    def test_sama_dashboard_is_aggregate_only_and_keeps_currencies_separate(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn("Pulse — Real COD Pilot", source)
+        self.assertIn("FX REQUIRED — Economic Completeness", source)
+        self.assertIn("Cross-currency contribution is intentionally unavailable", source)
+        queries = list((PROJECT_ROOT / "bi" / "sama_pilot_queries").glob("*.sql"))
+        self.assertEqual(len(queries), 14)
+        combined = "\n".join(path.read_text(encoding="utf-8").lower() for path in queries)
+        self.assertIn("collected_native_currency", combined)
+        self.assertIn("known_operational_cost_usd", combined)
+        self.assertNotIn("profit", combined)
+        self.assertNotIn("total_usd", combined)
+        for path in queries:
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertIn("business_id", text)
+            self.assertNotIn("phone", text)
+            self.assertNotIn("customer", text)
+
+        funnel = (PROJECT_ROOT / "bi" / "sama_pilot_queries" / "funnel.sql").read_text(
+            encoding="utf-8"
+        ).lower()
+        self.assertIn("stage_name", funnel)
+        self.assertIn("order_count", funnel)
+        self.assertNotIn("confirmation_rate", funnel)
+        self.assertNotIn("delivery_rate", funnel)
+        self.assertNotIn("return_rate", funnel)
+
+        native_revenue = (
+            PROJECT_ROOT / "bi" / "sama_pilot_queries" / "native_revenue.sql"
+        ).read_text(encoding="utf-8").lower()
+        self.assertIn("group by business_id, currency", native_revenue)
+        self.assertNotIn("delivered_orders", native_revenue)
+
+        usd_costs = (PROJECT_ROOT / "bi" / "sama_pilot_queries" / "usd_costs.sql").read_text(
+            encoding="utf-8"
+        ).lower()
+        for label in ("product cogs", "call center", "logistics", "known operational cost"):
+            self.assertIn(label, usd_costs)
+        self.assertNotIn("currency,", usd_costs)
 
 
 class MetabaseProvisioningTests(unittest.TestCase):

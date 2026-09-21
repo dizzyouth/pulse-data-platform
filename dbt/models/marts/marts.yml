@@ -423,3 +423,58 @@ models:
               values: [GBP]
       - name: economic_status
         data_tests: [not_null]
+  - name: sama_pilot_funnel
+    description: "Lightfunnels-origin funnel with conservative identity resolution and matched-cohort lifecycle rates."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: initial_orders
+        data_tests: [not_null, nonnegative]
+      - name: confirmation_rate
+        data_tests: [between_zero_and_one]
+      - name: delivery_rate
+        data_tests: [between_zero_and_one]
+      - name: return_rate
+        data_tests: [between_zero_and_one]
+  - name: sama_pilot_order_changes
+    description: "Aggregate initial-versus-final quantity and value changes without customer-level records."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, initial_quantity, final_quantity, currency]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: order_count
+        data_tests: [not_null, nonnegative]
+  - name: sama_pilot_native_economics
+    description: "Native collected cash and COD fees alongside, but never netted against, USD rule-derived costs."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, currency, economic_status]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: collected_native_currency
+        data_tests: [not_null, nonnegative]
+      - name: known_operational_cost_usd
+        data_tests: [not_null, nonnegative]
+      - name: economic_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [FX_REQUIRED, SEPARATE_CURRENCIES]
+  - name: sama_pilot_data_quality
+    description: "Aggregated pilot quality and business-outcome observations."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, check_name]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: check_name
+        data_tests: [not_null]
+      - name: issue_count
+        data_tests: [not_null, nonnegative]

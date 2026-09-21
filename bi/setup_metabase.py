@@ -633,6 +633,208 @@ def _ensure_uci_dashboard(session_id: str, database_id: int) -> None:
     print(f"UCI retail benchmark dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
 
 
+def _ensure_sama_pilot_dashboard(session_id: str, database_id: int) -> None:
+    """Create the executive, aggregate-only real COD pilot dashboard."""
+    def api(method: str, path: str, payload=None):
+        return _request(method, path, payload, session_id)
+
+    def field_format(name: str, *, decimals: int, style: str | None = None,
+                     currency: str | None = None) -> dict[str, Any]:
+        formatting: dict[str, Any] = {"decimals": decimals}
+        if style is not None:
+            formatting["number_style"] = style
+        if currency is not None:
+            formatting.update({"currency": currency, "currency_style": "symbol",
+                               "currency_in_header": True})
+        return {json.dumps(["name", name], separators=(",", ":")): formatting}
+
+    def count_settings(field: str) -> dict[str, Any]:
+        return {"scalar.field": field,
+                "column_settings": field_format(field, decimals=0)}
+
+    def rate_settings(field: str) -> dict[str, Any]:
+        return {"scalar.field": field,
+                "column_settings": field_format(field, decimals=2, style="percent")}
+
+    available = api("POST", "/api/dataset", {
+        "database": database_id, "type": "native", "parameters": [],
+        "native": {"query": "SELECT to_regclass('marts.sama_pilot_funnel') IS NOT NULL",
+                   "template-tags": {}},
+    })
+    rows = available.get("data", {}).get("rows", []) if available.get("status") == "completed" else []
+    if not rows or not rows[0][0]:
+        print("SAMA pilot marts are not loaded; skipping the optional pilot dashboard.")
+        return
+
+    collection = _unique(api("GET", "/api/collection"), "Pulse Real COD Pilot")
+    if collection is None:
+        collection = api("POST", "/api/collection", {"name": "Pulse Real COD Pilot"})
+    collection_id = collection["id"]
+    items = api("GET", f"/api/collection/{collection_id}/items").get("data", [])
+
+    specs = (
+        {"filename": "initial_orders_kpi", "title": "Initial Orders", "display": "scalar",
+         "columns": "initial_orders", "settings": count_settings("initial_orders"),
+         "description": "Initial Lightfunnels orders in the validated pilot cohort.",
+         "layout": (0, 0, 4, 4)},
+        {"filename": "confirmed_orders_kpi", "title": "Confirmed COD Orders", "display": "scalar",
+         "columns": "confirmed_orders", "settings": count_settings("confirmed_orders"),
+         "description": "Matched leads confirmed for COD fulfillment.",
+         "layout": (0, 4, 4, 4)},
+        {"filename": "delivered_orders_kpi", "title": "Delivered Orders", "display": "scalar",
+         "columns": "delivered_orders", "settings": count_settings("delivered_orders"),
+         "description": "Final COD orders with delivered status.",
+         "layout": (0, 8, 4, 4)},
+        {"filename": "return_rate_kpi", "title": "Return Rate", "display": "scalar",
+         "columns": "return_rate", "settings": rate_settings("return_rate"),
+         "description": "Returned orders as a percentage of shipped orders.",
+         "layout": (0, 12, 4, 4)},
+        {"filename": "collected_revenue_kpi", "title": "Collected Revenue — Native Currency",
+         "display": "table", "columns": "currency, collected_revenue",
+         "settings": {"column_settings": field_format("collected_revenue", decimals=2)},
+         "description": "Cash collected, kept separate for every native currency.",
+         "layout": (0, 16, 8, 4)},
+        {"filename": "confirmation_rate_kpi", "title": "Confirmation Rate", "display": "scalar",
+         "columns": "confirmation_rate", "settings": rate_settings("confirmation_rate"),
+         "description": "Confirmed leads as a percentage of high-confidence matches.",
+         "layout": (4, 0, 8, 4)},
+        {"filename": "delivery_rate_kpi", "title": "Delivery Rate", "display": "scalar",
+         "columns": "delivery_rate", "settings": rate_settings("delivery_rate"),
+         "description": "Delivered orders as a percentage of shipped orders.",
+         "layout": (4, 8, 8, 4)},
+        {"filename": "changed_orders_kpi", "title": "Changed Orders", "display": "scalar",
+         "columns": "changed_orders", "settings": count_settings("changed_orders"),
+         "description": "Matched final orders with a quantity or value change.",
+         "layout": (4, 16, 8, 4)},
+        {"filename": "funnel", "title": "Order Lifecycle — Counts", "display": "bar",
+         "columns": "stage_name, order_count", "order_by": "stage_order",
+         "settings": {"graph.dimensions": ["stage_name"], "graph.metrics": ["order_count"],
+                      "graph.show_values": True, "graph.legend_type": "none",
+                      "column_settings": field_format("order_count", decimals=0)},
+         "description": "Count-only lifecycle view; rates and exceptions are presented separately.",
+         "layout": (8, 0, 24, 8),
+         "aliases": ("Funnel — intent through delivery/return",
+                     "Funnel \ufffd intent through delivery/return")},
+        {"filename": "native_revenue", "title": "Revenue & COD Fee — Native Currency",
+         "display": "bar", "columns": "currency, collected_revenue, cod_fee",
+         "settings": {"column_settings": {
+                          **field_format("collected_revenue", decimals=2),
+                          **field_format("cod_fee", decimals=2)},
+                      "graph.dimensions": ["currency"],
+                      "graph.metrics": ["collected_revenue", "cod_fee"],
+                      "graph.show_values": True, "graph.legend_type": "compact"},
+         "description": "Collected revenue and COD fee by native currency; currencies are never summed.",
+         "layout": (16, 0, 12, 8),
+         "aliases": ("Revenue / Collection by Native Currency",)},
+        {"filename": "usd_costs", "title": "USD Operational Cost Breakdown", "display": "bar",
+         "columns": "cost_category, amount_usd", "order_by": "cost_order",
+         "settings": {"column_settings": field_format(
+                          "amount_usd", decimals=2, style="currency", currency="USD"),
+                      "graph.dimensions": ["cost_category"],
+                      "graph.metrics": ["amount_usd"], "graph.show_values": True,
+                      "graph.legend_type": "none"},
+         "description": "Explicit USD cost categories; Known Operational Cost is the reported total.",
+         "layout": (16, 12, 12, 8), "aliases": ("Operational Costs in USD",)},
+        {"filename": "order_changes", "title": "Initial vs Final Order Changes", "display": "table",
+         "columns": "quantity_change, currency, order_count, quantity_changed_orders, "
+                    "value_changed_orders, initial_value, final_value",
+         "settings": {"column_settings": {
+             **field_format("order_count", decimals=0),
+             **field_format("quantity_changed_orders", decimals=0),
+             **field_format("value_changed_orders", decimals=0),
+             **field_format("initial_value", decimals=2),
+             **field_format("final_value", decimals=2),
+         }},
+         "description": "Readable initial-to-final quantity and native-currency value changes.",
+         "layout": (24, 0, 14, 9)},
+        {"filename": "identity_data_quality", "title": "Identity & Data Quality", "display": "table",
+         "columns": "identity_status, record_count, disposition", "order_by": "display_order",
+         "settings": {"column_settings": field_format("record_count", decimals=0)},
+         "description": "Aggregate identity outcomes and cohort exclusions; no customer-level data or PII.",
+         "layout": (24, 14, 10, 9)},
+        {"filename": "economic_completeness", "title": "FX REQUIRED — Economic Completeness",
+         "display": "table", "columns": "currency, economic_status, economic_limitation",
+         "settings": {},
+         "description": "Cross-currency contribution is intentionally unavailable without trusted FX.",
+         "layout": (33, 0, 24, 5),
+         "aliases": ("Economic Completeness / FX Limitation",)},
+    )
+
+    managed_cards = []
+    stale_card_ids: set[int] = set()
+    for spec in specs:
+        filename = spec["filename"]
+        title = spec["title"]
+        base = (Path(__file__).parent / "sama_pilot_queries" / f"{filename}.sql").read_text(
+            encoding="utf-8"
+        ).rstrip(";\n")
+        query_sql = (f"SELECT {spec['columns']} FROM (\n" + base
+                     + "\n) AS pilot_card\nWHERE 1=1\n[[AND business_id = {{business}}]]")
+        if spec.get("order_by"):
+            query_sql += f"\nORDER BY {spec['order_by']}"
+        tags = {"business": {"id": "business", "name": "business", "display-name": "Business",
+                             "type": "text", "required": False}}
+        query = {"database": database_id, "type": "native",
+                 "native": {"query": query_sql, "template-tags": tags}}
+        result = api("POST", "/api/dataset", {**query, "parameters": []})
+        if result.get("status") != "completed":
+            detail = result.get("error", result.get("status"))
+            raise RuntimeError(f"SAMA pilot BI query {filename} failed: {detail}")
+        payload = {"name": title, "description": spec["description"],
+                   "collection_id": collection_id, "display": spec["display"],
+                   "dataset_query": query, "visualization_settings": spec["settings"]}
+        recognized_titles = {title, *spec.get("aliases", ())}
+        matches = [item for item in items
+                   if item.get("model") == "card" and item.get("name") in recognized_titles]
+        canonical = [item for item in matches if item.get("name") == title]
+        aliases = [item for item in matches if item.get("name") != title]
+        if len(canonical) > 1 or (not canonical and len(aliases) > 1):
+            raise RuntimeError(f"Multiple managed SAMA pilot cards match {title!r}.")
+        existing = canonical[0] if canonical else aliases[0] if aliases else None
+        if canonical:
+            stale_card_ids.update(int(item["id"]) for item in aliases)
+        card = (api("PUT", f"/api/card/{existing['id']}", payload)
+                if existing else api("POST", "/api/card", payload))
+        managed_cards.append((card, spec))
+
+    title = "Pulse — Real COD Pilot"
+    recognized_titles = {title, "Pulse \ufffd Real COD Pilot"}
+    matches = [item for item in items
+               if item.get("model") == "dashboard" and item.get("name") in recognized_titles]
+    if len(matches) > 1:
+        raise RuntimeError(f"Multiple managed SAMA pilot dashboards match {title!r}.")
+    dashboard = matches[0] if matches else None
+    dashboard_description = (
+        "Executive view of the validated Lightfunnels + COD Network pilot."
+    )
+    if dashboard is None:
+        dashboard = api("POST", "/api/dashboard", {
+            "name": title, "collection_id": collection_id,
+            "description": dashboard_description,
+        })
+    dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
+    dashcards = [item for item in dashboard.get("dashcards", [])
+                 if item.get("card_id") not in stale_card_ids]
+    for index, (card, spec) in enumerate(managed_cards):
+        mappings = [{"parameter_id": "business", "card_id": card["id"],
+                     "target": ["variable", ["template-tag", "business"]]}]
+        existing = next((item for item in dashcards if item.get("card_id") == card["id"]), None)
+        row, col, size_x, size_y = spec["layout"]
+        layout = {"row": row, "col": col, "size_x": size_x, "size_y": size_y,
+                  "parameter_mappings": mappings, "visualization_settings": {}}
+        if existing:
+            existing.update(layout)
+        else:
+            dashcards.append({"id": -(600 + index), "card_id": card["id"], **layout})
+
+    parameter = {"id": "business", "name": "Business", "slug": "business", "type": "string/="}
+    others = [item for item in dashboard.get("parameters", []) if item["id"] != "business"]
+    api("PUT", f"/api/dashboard/{dashboard['id']}", {
+        "name": title, "description": dashboard_description,
+        "dashcards": dashcards, "parameters": [parameter, *others],
+    })
+    print(f"Real COD pilot dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
+
 def main() -> int:
     properties = _request("GET", "/api/session/properties")
     setup_token = properties.get("setup-token")
@@ -647,6 +849,7 @@ def main() -> int:
     _ensure_economics_dashboard(session_id, database_id)
     _ensure_olist_dashboard(session_id, database_id)
     _ensure_uci_dashboard(session_id, database_id)
+    _ensure_sama_pilot_dashboard(session_id, database_id)
     if __package__:
         from .monitoring_dashboard import ensure_dashboard
     else:

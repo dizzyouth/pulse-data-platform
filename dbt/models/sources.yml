@@ -427,3 +427,51 @@ sources:
               - not_null
               - accepted_values:
                   values: [INCOMPLETE_COSTS]
+      - name: sama_pilot_order_facts
+        description: "Privacy-sanitized Lightfunnels-origin cohort with initial intent, final COD truth, native collections, and separately denominated USD operating costs."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, lightfunnel_order_id]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: lightfunnel_order_id
+            data_tests: [not_null]
+          - name: match_status
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [MATCHED_HIGH_CONFIDENCE, AMBIGUOUS, UNMATCHED]
+          - name: cash_collected
+            description: "Authoritative COD Total collected in native order currency; never converted from Total USD."
+            data_tests: [not_null, nonnegative]
+          - name: known_operational_cost_usd
+            description: "Rule-derived product, call-center, and logistics costs in USD; not provider invoice lines."
+            data_tests: [not_null, nonnegative]
+      - name: sama_pilot_identity_resolution
+        description: "Order-to-lead resolution using HMAC phone plus commercial and temporal evidence; no raw PII."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, lightfunnel_order_id]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: lightfunnel_order_id
+            data_tests: [not_null]
+          - name: match_status
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [MATCHED_HIGH_CONFIDENCE, AMBIGUOUS, UNMATCHED]
+      - name: sama_pilot_data_quality
+        description: "Aggregated identity, source-shape, lifecycle, and business-outcome observations without record-level data."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, check_name]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: check_name
+            data_tests: [not_null]
+          - name: issue_count
+            data_tests: [not_null, nonnegative]

@@ -2631,3 +2631,19 @@ ledger value as profit.
 Deliberate limitations: no reversal-to-original relationship is inferred, not
 every special StockCode is assigned a business meaning, no fulfillment events
 are constructed, and economics remains explicitly incomplete.
+
+## Phase 6.5A — first real COD pilot
+
+The Lightfunnels + COD Network pilot is implemented as a privacy-safe,
+business-specific adapter without changing canonical Operations or Economics
+contracts. It preserves initial intent and final COD truth separately, excludes
+ambiguous/unmatched COD records from target-funnel KPIs, retains post-cohort
+lifecycle events, applies the owner-supplied lifecycle cost rules, and keeps
+native SAR/AED/KWD cash separate from USD costs with `FX_REQUIRED` rather than
+reporting false contribution or profit.
+
+Real inputs remain ignored under `data/private/sama_pilot/`; offline CI uses
+only synthetic fixtures. See
+[`docs/phase_6_5a_sama_cod_pilot.md`](docs/phase_6_5a_sama_cod_pilot.md) for
+lineage, status mappings, identity scoring, privacy guarantees, costs,
+warehouse/dbt/Metabase outputs, commands, and the TikTok Phase 6.5B deferral.

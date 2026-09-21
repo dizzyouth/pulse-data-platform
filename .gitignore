@@ -35,6 +35,8 @@ data/fixtures/*
 !data/fixtures/operations/*.json
 !data/fixtures/economics/
 !data/fixtures/economics/*.json
+!data/fixtures/sama_pilot/
+!data/fixtures/sama_pilot/*.json
 !data/fixtures/olist/
 !data/fixtures/olist/*.csv
 !data/fixtures/uci_online_retail_ii/
