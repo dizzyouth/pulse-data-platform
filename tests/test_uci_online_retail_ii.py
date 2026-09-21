@@ -102,7 +102,11 @@ class UciManifestAndParserTests(unittest.TestCase):
         config = registry.sources_for(UCI_BUSINESS_ID)[0]
         adapter = adapter_for(config)
         self.assertIsInstance(adapter, UciOnlineRetailAdapter)
-        self.assertTrue(adapter.healthcheck().healthy)
+        self.assertFalse(config.metadata["network_access"])
+        fixture_adapter = UciOnlineRetailAdapter(
+            PROJECT_ROOT / "data/fixtures/uci_online_retail_ii",
+            config=config, fixture=True)
+        self.assertTrue(fixture_adapter.healthcheck().healthy)
 
 
 class UciIdentityAndClassificationTests(unittest.TestCase):
