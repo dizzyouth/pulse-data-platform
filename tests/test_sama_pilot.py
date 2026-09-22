@@ -119,9 +119,17 @@ class SamaPilotTests(unittest.TestCase):
         source = (PROJECT_ROOT / "airflow/dags/pulse_sama_cod_pilot.py").read_text(encoding="utf-8")
         self.assertIn('dag_id="pulse_sama_real_cod_pilot"', source)
         self.assertIn("schedule=None", source)
-        for task_id in ("validate_private_sources", "load_sanitized_pilot", "run_dbt", "test_dbt"):
+        for task_id in ("validate_private_sources", "load_sanitized_pilot", "validate_tiktok_source",
+                        "load_tiktok_marketing", "run_dbt", "test_dbt"):
             self.assertIn(f'task_id="{task_id}"', source)
-        self.assertIn("validate_private_sources >> load_sanitized_pilot >> run_dbt >> test_dbt", source)
+        for dependency in (
+            "validate_private_sources\n        >> load_sanitized_pilot",
+            "load_sanitized_pilot\n        >> validate_tiktok_source",
+            "validate_tiktok_source\n        >> load_tiktok_marketing",
+            "load_tiktok_marketing\n        >> run_dbt",
+            "run_dbt\n        >> test_dbt",
+        ):
+            self.assertIn(dependency, source)
 
 
 @unittest.skipUnless(os.environ.get("RUN_SAMA_PILOT_FULL_ACCEPTANCE") == "1",

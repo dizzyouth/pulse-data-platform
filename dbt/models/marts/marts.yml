@@ -478,3 +478,52 @@ models:
         data_tests: [not_null]
       - name: issue_count
         data_tests: [not_null, nonnegative]
+  - name: sama_pilot_tiktok_native_performance
+    description: "TikTok-native ad-day performance with provider diagnostics and ratios recalculated only from additive components."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, account_id, campaign_id, ad_group_id, ad_id, report_date]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: spend_usd
+        data_tests: [not_null, nonnegative]
+      - name: destination_ctr
+        data_tests: [between_zero_and_one]
+  - name: sama_pilot_tiktok_campaign_outcomes
+    description: "Campaign-only comparison of TikTok platform metrics and observed Lightfunnels/COD outcomes; no cross-currency revenue or business ROAS."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, campaign_id]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: campaign_id
+        data_tests: [not_null]
+      - name: spend_currency
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [USD]
+      - name: spend_usd
+        data_tests: [not_null, nonnegative]
+      - name: confirmation_rate
+        data_tests: [between_zero_and_one]
+      - name: delivery_rate
+        data_tests: [between_zero_and_one]
+      - name: return_rate
+        data_tests: [between_zero_and_one]
+  - name: sama_pilot_tiktok_data_quality
+    description: "Phase 6.5B aggregate source, linkage, reconciliation, and boundary observations."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, check_name]
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: check_name
+        data_tests: [not_null]
+      - name: issue_count
+        data_tests: [not_null, nonnegative]

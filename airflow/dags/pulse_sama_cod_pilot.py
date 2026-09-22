@@ -1,4 +1,4 @@
-"""Manual, local-only Phase 6.5A real COD pilot orchestration."""
+"""Manual, local-only Phase 6.5A/6.5B COD and TikTok pilot orchestration."""
 
 from __future__ import annotations
 
@@ -9,8 +9,12 @@ from airflow.operators.bash import BashOperator
 
 
 PROJECT_ROOT = "/opt/pulse"
-DBT_MODELS = " ".join(("sama_pilot_funnel", "sama_pilot_order_changes",
-                       "sama_pilot_native_economics", "sama_pilot_data_quality"))
+DBT_MODELS = " ".join((
+    "sama_pilot_funnel", "sama_pilot_order_changes",
+    "sama_pilot_native_economics", "sama_pilot_data_quality",
+    "sama_pilot_tiktok_native_performance", "sama_pilot_tiktok_campaign_outcomes",
+    "sama_pilot_tiktok_data_quality",
+))
 
 with DAG(
     dag_id="pulse_sama_real_cod_pilot",
@@ -33,6 +37,16 @@ with DAG(
         bash_command="python -m src.warehouse.load_sama_pilot load",
         cwd=PROJECT_ROOT,
     )
+    validate_tiktok_source = BashOperator(
+        task_id="validate_tiktok_source",
+        bash_command="python -m src.pilots.sama_tiktok validate",
+        cwd=PROJECT_ROOT,
+    )
+    load_tiktok_marketing = BashOperator(
+        task_id="load_tiktok_marketing",
+        bash_command="python -m src.warehouse.load_sama_tiktok load",
+        cwd=PROJECT_ROOT,
+    )
     run_dbt = BashOperator(
         task_id="run_dbt",
         bash_command=f"dbt run --project-dir /opt/pulse/dbt --select {DBT_MODELS}",
@@ -44,4 +58,11 @@ with DAG(
         cwd=PROJECT_ROOT,
     )
 
-    validate_private_sources >> load_sanitized_pilot >> run_dbt >> test_dbt
+    (
+        validate_private_sources
+        >> load_sanitized_pilot
+        >> validate_tiktok_source
+        >> load_tiktok_marketing
+        >> run_dbt
+        >> test_dbt
+    )

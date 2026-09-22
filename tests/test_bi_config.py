@@ -44,6 +44,9 @@ EXPECTED_MARTS = {
     "marts.sama_pilot_order_changes",
     "marts.sama_pilot_native_economics",
     "marts.sama_pilot_data_quality",
+    "marts.sama_pilot_tiktok_native_performance",
+    "marts.sama_pilot_tiktok_campaign_outcomes",
+    "marts.sama_pilot_tiktok_data_quality",
 }
 
 
@@ -82,7 +85,11 @@ class MetabaseConfigurationTests(unittest.TestCase):
     def test_bi_queries_reference_all_and_only_dbt_marts(self) -> None:
         query_text = "\n".join(
             path.read_text(encoding="utf-8").lower()
-            for directory in ("queries", "marketing_queries", "operations_queries", "economics_queries", "olist_queries", "uci_queries", "sama_pilot_queries")
+            for directory in (
+                "queries", "marketing_queries", "operations_queries",
+                "economics_queries", "olist_queries", "uci_queries",
+                "sama_pilot_queries", "sama_tiktok_queries",
+            )
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
         for mart in EXPECTED_MARTS:
@@ -200,6 +207,32 @@ class MetabaseConfigurationTests(unittest.TestCase):
         for label in ("product cogs", "call center", "logistics", "known operational cost"):
             self.assertIn(label, usd_costs)
         self.assertNotIn("currency,", usd_costs)
+
+    def test_sama_tiktok_dashboard_separates_platform_and_business_metrics(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn("Pulse — Real TikTok Performance", source)
+        self.assertIn("TikTok-reported conversions; not labeled as observed orders", source)
+        self.assertIn("Observed outcomes stop at campaign grain", source)
+        self.assertIn("Platform vs Observed Business Outcomes", source)
+        self.assertIn('"previous_title": "Platform vs Observed Business Funnel"', source)
+        self.assertIn("Delivered and Returned are sibling terminal outcomes", source)
+        self.assertIn('"scalar.field": "target_campaign_spend_display"', source)
+        queries = list((PROJECT_ROOT / "bi" / "sama_tiktok_queries").glob("*.sql"))
+        self.assertEqual(len(queries), 11)
+        combined = "\n".join(path.read_text(encoding="utf-8").lower() for path in queries)
+        self.assertIn("platform_conversions", combined)
+        self.assertIn("lightfunnels_orders", combined)
+        self.assertIn("fx_required", combined)
+        self.assertNotIn("business_roas", combined)
+        self.assertNotIn("platform_conversion_value", combined)
+        self.assertIn("target_campaign_spend_display", combined)
+        self.assertIn("delivered orders (terminal outcome)", combined)
+        self.assertIn("returned orders (terminal outcome)", combined)
+        for path in queries:
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertIn("business_id", text)
+            for forbidden in ("phone", "email", "address", "tracking"):
+                self.assertNotIn(forbidden, text)
 
 
 class MetabaseProvisioningTests(unittest.TestCase):

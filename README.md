@@ -2646,4 +2646,24 @@ Real inputs remain ignored under `data/private/sama_pilot/`; offline CI uses
 only synthetic fixtures. See
 [`docs/phase_6_5a_sama_cod_pilot.md`](docs/phase_6_5a_sama_cod_pilot.md) for
 lineage, status mappings, identity scoring, privacy guarantees, costs,
-warehouse/dbt/Metabase outputs, commands, and the TikTok Phase 6.5B deferral.
+warehouse/dbt/Metabase outputs, and commands.
+
+## Phase 6.5B — real TikTok performance
+
+The SAMA pilot now ingests the final daily ad-level TikTok XLSX through a
+business-specific, privacy-safe adapter. It preserves the native campaign,
+ad-group, ad, and day grain and validates every sanitized row against the
+existing `MarketingRecord` contract. Lightfunnels outcomes are attributed only
+at campaign/day grain; they are never allocated to ad groups or ads.
+
+The separate **Pulse — Real TikTok Performance** dashboard compares native
+TikTok metrics with observed COD outcomes while keeping platform conversions
+distinct from Lightfunnels orders. Spend is USD, COD revenue remains in its
+native currencies, and cross-currency ROAS, contribution, and profit remain
+unavailable without trusted FX.
+
+Real inputs remain ignored under `data/private/sama_pilot/`; CI uses the small
+synthetic fixture. See
+[`docs/phase_6_5b_sama_tiktok.md`](docs/phase_6_5b_sama_tiktok.md) for source
+lineage, metric semantics, DQ controls, warehouse/dbt/BI outputs, and local
+validation commands.

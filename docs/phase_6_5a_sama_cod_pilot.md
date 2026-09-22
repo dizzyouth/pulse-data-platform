@@ -87,11 +87,9 @@ The Airflow DAG `pulse_sama_real_cod_pilot` is manual-only. Full local source
 acceptance is opt-in with `RUN_SAMA_PILOT_FULL_ACCEPTANCE=1`; CI uses only the
 tiny synthetic JSON fixture.
 
-## TikTok deferral
+## TikTok follow-on
 
-The file named `... ad.xlsx` is campaign-level and the file named
-`... campaign.xlsx` is ad-level. Both are whole-period aggregates without daily
-grain, and the ad export lacks the hierarchy required by
-`tiktok_ads_daily_v1`. Phase 6.5A profiles their schema only. They are not
-forced into marketing models; ingestion is deferred to Phase 6.5B pending a
-daily ad-level export with lineage.
+The earlier whole-period TikTok exports remain unsuitable for canonical daily
+marketing grain and are not ingested. Phase 6.5B uses only the replacement
+`Tiktok Ads_Daily ad level.xlsx`, which supplies campaign, ad-group, ad, and day
+lineage. See [`phase_6_5b_sama_tiktok.md`](phase_6_5b_sama_tiktok.md).

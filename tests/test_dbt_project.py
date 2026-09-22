@@ -43,6 +43,9 @@ EXPECTED_SOURCES = {
     "sama_pilot_order_facts",
     "sama_pilot_identity_resolution",
     "sama_pilot_data_quality",
+    "sama_pilot_tiktok_ad_daily",
+    "sama_pilot_tiktok_order_outcomes_daily",
+    "sama_pilot_tiktok_data_quality",
 }
 EXPECTED_MARTS = {
     "revenue_by_day",
@@ -79,6 +82,9 @@ EXPECTED_MARTS = {
     "sama_pilot_order_changes",
     "sama_pilot_native_economics",
     "sama_pilot_data_quality",
+    "sama_pilot_tiktok_native_performance",
+    "sama_pilot_tiktok_campaign_outcomes",
+    "sama_pilot_tiktok_data_quality",
 }
 
 

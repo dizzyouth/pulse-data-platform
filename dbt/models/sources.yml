@@ -475,3 +475,45 @@ sources:
             data_tests: [not_null]
           - name: issue_count
             data_tests: [not_null, nonnegative]
+      - name: sama_pilot_tiktok_ad_daily
+        description: "Sanitized canonical TikTok ad-day records from the final private XLSX; IDs remain exact text and native diagnostics remain JSON metadata."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, account_id, campaign_id, ad_group_id, ad_id, report_date]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: currency
+            data_tests:
+              - not_null
+              - accepted_values:
+                  values: [USD]
+          - name: spend
+            data_tests: [not_null, nonnegative]
+          - name: platform_conversion_value
+            description: "Always zero because the source has no trustworthy canonical conversion-value measure; native Purchase ROAS is diagnostic metadata only."
+            data_tests: [not_null, nonnegative]
+      - name: sama_pilot_tiktok_order_outcomes_daily
+        description: "PII-free campaign/day aggregates from the validated Phase 6.5A intent and COD outcome layer; no ad-group or ad attribution."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, campaign_id, report_date]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: campaign_id
+            data_tests: [not_null]
+          - name: initial_orders
+            data_tests: [not_null, nonnegative]
+      - name: sama_pilot_tiktok_data_quality
+        description: "Aggregate Phase 6.5B reconciliation checks and explicitly classified observations."
+        data_tests:
+          - unique_combination:
+              column_names: [business_id, check_name]
+        columns:
+          - name: business_id
+            data_tests: [not_null]
+          - name: check_name
+            data_tests: [not_null]
+          - name: issue_count
+            data_tests: [not_null, nonnegative]

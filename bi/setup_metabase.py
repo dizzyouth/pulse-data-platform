@@ -835,6 +835,189 @@ def _ensure_sama_pilot_dashboard(session_id: str, database_id: int) -> None:
     })
     print(f"Real COD pilot dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
 
+def _ensure_sama_tiktok_dashboard(session_id: str, database_id: int) -> None:
+    """Create the separate aggregate-only real TikTok performance dashboard."""
+    def api(method: str, path: str, payload=None):
+        return _request(method, path, payload, session_id)
+
+    def field_format(name: str, *, decimals: int, style: str | None = None,
+                     currency: str | None = None) -> dict[str, Any]:
+        formatting: dict[str, Any] = {"decimals": decimals}
+        if style is not None:
+            formatting["number_style"] = style
+        if currency is not None:
+            formatting.update({"currency": currency, "currency_style": "symbol",
+                               "currency_in_header": True})
+        return {json.dumps(["name", name], separators=(",", ":")): formatting}
+
+    def scalar_settings(field: str, *, money: bool = False) -> dict[str, Any]:
+        return {
+            "scalar.field": field,
+            "column_settings": field_format(
+                field, decimals=2 if money else 0,
+                style="currency" if money else None,
+                currency="USD" if money else None,
+            ),
+        }
+
+    available = api("POST", "/api/dataset", {
+        "database": database_id, "type": "native", "parameters": [],
+        "native": {
+            "query": "SELECT to_regclass('marts.sama_pilot_tiktok_campaign_outcomes') IS NOT NULL",
+            "template-tags": {},
+        },
+    })
+    rows = available.get("data", {}).get("rows", []) if available.get("status") == "completed" else []
+    if not rows or not rows[0][0]:
+        print("SAMA TikTok marts are not loaded; skipping the optional TikTok dashboard.")
+        return
+
+    collection = _unique(api("GET", "/api/collection"), "Pulse Real TikTok Performance")
+    if collection is None:
+        collection = api("POST", "/api/collection", {"name": "Pulse Real TikTok Performance"})
+    collection_id = collection["id"]
+    items = api("GET", f"/api/collection/{collection_id}/items").get("data", [])
+    count_format = field_format("stage_count", decimals=0)
+    money_format = {
+        **field_format("spend_usd", decimals=2, style="currency", currency="USD"),
+        **field_format("cost_per_order_usd", decimals=2, style="currency", currency="USD"),
+        **field_format("cost_per_confirmed_usd", decimals=2, style="currency", currency="USD"),
+        **field_format("cost_per_delivered_usd", decimals=2, style="currency", currency="USD"),
+        **field_format("platform_cpa_usd", decimals=2, style="currency", currency="USD"),
+    }
+    rate_format = {
+        **field_format("delivery_rate", decimals=2, style="percent"),
+        **field_format("return_rate", decimals=2, style="percent"),
+        **field_format("destination_ctr", decimals=2, style="percent"),
+        **field_format("hook_rate", decimals=2, style="percent"),
+        **field_format("hold_rate", decimals=2, style="percent"),
+    }
+    specs = (
+        {"filename": "target_spend_kpi", "title": "Target Campaign Spend", "display": "scalar",
+         "columns": "target_campaign_spend_display",
+         "settings": {"scalar.field": "target_campaign_spend_display"},
+         "description": "TikTok spend for the 12 campaigns observed in the Lightfunnels funnel.",
+         "layout": (0, 0, 4, 4)},
+        {"filename": "platform_conversions_kpi", "title": "Platform Conversions",
+         "display": "scalar", "columns": "platform_conversions",
+         "settings": scalar_settings("platform_conversions"),
+         "description": "TikTok-reported conversions; not labeled as observed orders.",
+         "layout": (0, 4, 4, 4)},
+        {"filename": "lightfunnels_orders_kpi", "title": "Lightfunnels Orders",
+         "display": "scalar", "columns": "lightfunnels_orders",
+         "settings": scalar_settings("lightfunnels_orders"),
+         "description": "Observed initial orders attributed only at campaign level.",
+         "layout": (0, 8, 4, 4)},
+        {"filename": "confirmed_orders_kpi", "title": "Confirmed Orders", "display": "scalar",
+         "columns": "confirmed_orders", "settings": scalar_settings("confirmed_orders"),
+         "description": "Observed high-confidence campaign-level COD confirmations.",
+         "layout": (0, 12, 4, 4)},
+        {"filename": "delivered_orders_kpi", "title": "Delivered Orders", "display": "scalar",
+         "columns": "delivered_orders", "settings": scalar_settings("delivered_orders"),
+         "description": "Observed high-confidence campaign-level COD deliveries.",
+         "layout": (0, 16, 4, 4)},
+        {"filename": "cost_per_delivered_kpi", "title": "Cost / Delivered Order",
+         "display": "scalar", "columns": "cost_per_delivered_order_usd",
+         "settings": scalar_settings("cost_per_delivered_order_usd", money=True),
+         "description": "Target TikTok USD spend divided by observed delivered-order count.",
+         "layout": (0, 20, 4, 4)},
+        {"filename": "funnel_comparison", "title": "Platform vs Observed Business Outcomes",
+         "previous_title": "Platform vs Observed Business Funnel",
+         "display": "bar", "columns": "stage_name, stage_count", "order_by": "stage_order",
+         "settings": {"graph.dimensions": ["stage_name"], "graph.metrics": ["stage_count"],
+                      "graph.show_values": True, "graph.legend_type": "none",
+                      "column_settings": count_format},
+         "description": "TikTok-reported conversions compared with observed downstream counts. "
+                        "Delivered and Returned are sibling terminal outcomes of Shipped Orders; "
+                        "neither occurs after the other.",
+         "layout": (4, 0, 24, 8)},
+        {"filename": "campaign_business_performance",
+         "title": "Campaign-Level Observed Business Performance", "display": "table",
+         "columns": "campaign_name, spend_usd, platform_conversions, initial_orders, "
+                    "confirmed_orders, delivered_orders, returned_orders, cost_per_order_usd, "
+                    "cost_per_confirmed_usd, cost_per_delivered_usd, delivery_rate, return_rate",
+         "settings": {"column_settings": {**money_format, **rate_format}},
+         "description": "Observed outcomes stop at campaign grain; no ad-group or ad allocation.",
+         "layout": (12, 0, 24, 10)},
+        {"filename": "native_performance", "title": "TikTok Native Ad Performance",
+         "display": "table",
+         "columns": "campaign_name, ad_group_name, ad_name, spend_usd, impressions, "
+                    "destination_clicks, platform_conversions, checkouts, destination_ctr, "
+                    "platform_cpa_usd, hook_rate, hold_rate",
+         "settings": {"column_settings": {**money_format, **rate_format}},
+         "description": "Native hierarchy metrics only; ratios are recalculated from additive components.",
+         "layout": (22, 0, 24, 10)},
+        {"filename": "attribution_data_quality", "title": "Attribution & Data Quality",
+         "display": "table",
+         "columns": "check_name, category, issue_count, observed_value, expected_value, status",
+         "settings": {"column_settings": field_format("issue_count", decimals=0)},
+         "description": "Source defects and observations, including outside-cohort and boundary cases.",
+         "layout": (32, 0, 24, 8)},
+        {"filename": "economic_limitation", "title": "FX REQUIRED — Economic Limitation",
+         "display": "table",
+         "columns": "marketing_spend_currency, cod_revenue_currency, economic_status, economic_limitation",
+         "settings": {},
+         "description": "No cross-currency business ROAS, contribution, or profit is calculated.",
+         "layout": (40, 0, 24, 5)},
+    )
+
+    managed_cards = []
+    for spec in specs:
+        base = (Path(__file__).parent / "sama_tiktok_queries" / f"{spec['filename']}.sql").read_text(
+            encoding="utf-8"
+        ).rstrip(";\n")
+        query_sql = (f"SELECT {spec['columns']} FROM (\n" + base
+                     + "\n) AS tiktok_card\nWHERE 1=1\n[[AND business_id = {{business}}]]")
+        if spec.get("order_by"):
+            query_sql += f"\nORDER BY {spec['order_by']}"
+        tags = {"business": {"id": "business", "name": "business", "display-name": "Business",
+                             "type": "text", "required": False}}
+        query = {"database": database_id, "type": "native",
+                 "native": {"query": query_sql, "template-tags": tags}}
+        result = api("POST", "/api/dataset", {**query, "parameters": []})
+        if result.get("status") != "completed":
+            detail = result.get("error", result.get("status"))
+            raise RuntimeError(f"SAMA TikTok BI query {spec['filename']} failed: {detail}")
+        payload = {"name": spec["title"], "description": spec["description"],
+                   "collection_id": collection_id, "display": spec["display"],
+                   "dataset_query": query, "visualization_settings": spec["settings"]}
+        collection_cards = [item for item in items if item.get("model") == "card"]
+        existing = _unique(collection_cards, spec["title"])
+        if existing is None and spec.get("previous_title"):
+            existing = _unique(collection_cards, spec["previous_title"])
+        card = (api("PUT", f"/api/card/{existing['id']}", payload)
+                if existing else api("POST", "/api/card", payload))
+        managed_cards.append((card, spec))
+
+    title = "Pulse — Real TikTok Performance"
+    dashboard = _unique([item for item in items if item.get("model") == "dashboard"], title)
+    description = "TikTok-reported performance and campaign-only observed COD outcomes."
+    if dashboard is None:
+        dashboard = api("POST", "/api/dashboard", {
+            "name": title, "collection_id": collection_id, "description": description,
+        })
+    dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
+    dashcards = dashboard.get("dashcards", [])
+    for index, (card, spec) in enumerate(managed_cards):
+        mappings = [{"parameter_id": "business", "card_id": card["id"],
+                     "target": ["variable", ["template-tag", "business"]]}]
+        existing = next((item for item in dashcards if item.get("card_id") == card["id"]), None)
+        row, col, size_x, size_y = spec["layout"]
+        layout = {"row": row, "col": col, "size_x": size_x, "size_y": size_y,
+                  "parameter_mappings": mappings, "visualization_settings": {}}
+        if existing:
+            existing.update(layout)
+        else:
+            dashcards.append({"id": -(700 + index), "card_id": card["id"], **layout})
+    parameter = {"id": "business", "name": "Business", "slug": "business", "type": "string/="}
+    others = [item for item in dashboard.get("parameters", []) if item["id"] != "business"]
+    api("PUT", f"/api/dashboard/{dashboard['id']}", {
+        "name": title, "description": description,
+        "dashcards": dashcards, "parameters": [parameter, *others],
+    })
+    print(f"Real TikTok performance dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
+
+
 def main() -> int:
     properties = _request("GET", "/api/session/properties")
     setup_token = properties.get("setup-token")
@@ -850,6 +1033,7 @@ def main() -> int:
     _ensure_olist_dashboard(session_id, database_id)
     _ensure_uci_dashboard(session_id, database_id)
     _ensure_sama_pilot_dashboard(session_id, database_id)
+    _ensure_sama_tiktok_dashboard(session_id, database_id)
     if __package__:
         from .monitoring_dashboard import ensure_dashboard
     else:
