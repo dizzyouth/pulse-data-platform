@@ -18,7 +18,6 @@ import math
 import re
 from pathlib import Path
 from typing import Any, Iterable, Iterator
-from urllib.parse import unquote_plus
 from uuid import NAMESPACE_URL, uuid5
 import xml.etree.ElementTree as ET
 import zipfile
@@ -36,6 +35,7 @@ from src.pilots.sama import (
     SOURCE_TIMEZONE,
     _csv_rows,
     _identifier,
+    _utm_attributes,
     _xlsx_rows,
     build_pilot,
 )
@@ -214,27 +214,6 @@ def _is_invalid_id(value: str) -> bool:
     )
 
 
-def _utm_attributes(value: Any) -> dict[str, str]:
-    """Parse Lightfunnels' concatenated source/id/campaign/medium string."""
-    text = str(value or "").strip()
-    if not text:
-        return {}
-    try:
-        parsed = json.loads(text)
-    except (TypeError, ValueError):
-        parsed = None
-    if isinstance(parsed, dict):
-        normalized = {str(key).lower().replace("utm_", ""): str(item or "").strip()
-                      for key, item in parsed.items()}
-        return {key: normalized.get(key, "") for key in ("source", "id", "campaign", "medium")}
-    matches = list(re.finditer(r"(source|id|campaign|medium)=", text, re.IGNORECASE))
-    output: dict[str, str] = {}
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        output[match.group(1).lower()] = unquote_plus(text[match.end():end].strip())
-    return output
-
-
 def _dq_row(name: str, category: str, count: int, *, observed: float | None = None,
             expected: float | None = None) -> dict[str, Any]:
     status = "FAIL" if category == "DATA_DEFECT" and count else (
@@ -335,9 +314,9 @@ def _order_campaign_outcomes(
     for row in light_rows:
         order_id = _identifier(row.get("Order Id"))
         attributes = _utm_attributes(row.get("UTM Attributes"))
-        if order_id and attributes.get("source", "").strip().lower() == "tiktok":
-            by_order[order_id].add((attributes.get("id", "").strip(),
-                                    attributes.get("campaign", "").strip()))
+        if order_id and (attributes.get("utm_source") or "").strip().lower() == "tiktok":
+            by_order[order_id].add(((attributes.get("utm_id") or "").strip(),
+                                    (attributes.get("utm_campaign") or "").strip()))
     conflicts = sum(len(values) > 1 for values in by_order.values())
     missing_campaign_ids = sum(
         len(values) == 1 and not next(iter(values))[0]

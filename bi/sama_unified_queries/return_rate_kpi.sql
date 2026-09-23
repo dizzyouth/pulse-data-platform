@@ -1,0 +1,2 @@
+SELECT business_id, return_rate
+FROM marts.sama_pilot_unified_overview

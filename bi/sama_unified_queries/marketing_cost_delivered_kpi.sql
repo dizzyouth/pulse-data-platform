@@ -1,0 +1,2 @@
+SELECT business_id, marketing_cost_per_delivered_order_usd
+FROM marts.sama_pilot_unified_overview

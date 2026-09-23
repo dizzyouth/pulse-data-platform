@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any, Iterable, Iterator
+from urllib.parse import unquote_plus
 from uuid import NAMESPACE_URL, uuid5
 import xml.etree.ElementTree as ET
 import zipfile
@@ -305,6 +306,7 @@ def _safe_details(**values: Any) -> dict[str, Any]:
 
 
 def _utm_attributes(value: Any) -> dict[str, str | None]:
+    """Parse JSON, delimited, or Lightfunnels' concatenated UTM attributes."""
     text = _text(value)
     parsed: dict[str, Any] = {}
     if text:
@@ -313,12 +315,17 @@ def _utm_attributes(value: Any) -> dict[str, str | None]:
             if isinstance(candidate, dict):
                 parsed = {str(key).lower().replace(" ", "_"): item for key, item in candidate.items()}
         except (TypeError, ValueError):
-            for name in ("source", "medium", "campaign", "content", "term"):
-                match = re.search(rf"utm[_ ]?{name}\s*[:=]\s*[\"']?([^,;&\"'}}]+)", text, re.IGNORECASE)
-                if match:
-                    parsed[f"utm_{name}"] = match.group(1).strip()
+            matches = list(re.finditer(
+                r"(?:utm[_ ]?)?(source|id|campaign|medium|content|term)\s*[:=]\s*[\"']?",
+                text,
+                re.IGNORECASE,
+            ))
+            for index, match in enumerate(matches):
+                end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+                item = text[match.end():end].strip(" \t\r\n,;&\"'}")
+                parsed[f"utm_{match.group(1).lower()}"] = unquote_plus(item)
     result = {}
-    for name in ("source", "medium", "campaign", "content", "term"):
+    for name in ("source", "id", "medium", "campaign", "content", "term"):
         item = parsed.get(f"utm_{name}", parsed.get(name))
         cleaned = _text(item)
         result[f"utm_{name}"] = cleaned[:255] if cleaned else None

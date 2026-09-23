@@ -527,3 +527,185 @@ models:
         data_tests: [not_null]
       - name: issue_count
         data_tests: [not_null, nonnegative]
+  - name: sama_pilot_unified_overview
+    description: "One-row executive decision layer for the target TikTok-to-Lightfunnels acquisition cohort; native collections remain outside this USD-only aggregate."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id]
+      - sama_unified_overview_reconciles
+      - sama_unified_fact_cohort_reconciles
+      - expression_is_true:
+          expression: "delivered_orders <= shipped_orders"
+      - expression_is_true:
+          expression: "abs(known_operational_cost_usd - (product_cogs_usd + call_center_cost_usd + logistics_cost_usd)) <= 0.000001"
+      - expression_is_true:
+          expression: "abs(total_known_usd_cost - (marketing_spend_usd + known_operational_cost_usd)) <= 0.000001"
+      - expression_is_true:
+          expression: "period_start = date '2026-03-01' and period_end = date '2026-07-31'"
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: marketing_currency
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [USD]
+      - name: reporting_timezone
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [Etc/GMT-1]
+      - name: target_campaigns
+        data_tests: [not_null, nonnegative]
+      - name: marketing_spend_usd
+        data_tests: [not_null, nonnegative]
+      - name: impressions
+        data_tests: [not_null, nonnegative]
+      - name: destination_clicks
+        data_tests: [not_null, nonnegative]
+      - name: platform_conversions
+        data_tests: [not_null, nonnegative]
+      - name: checkouts
+        data_tests: [not_null, nonnegative]
+      - name: lightfunnels_orders
+        data_tests: [not_null, nonnegative]
+      - name: matched_orders
+        data_tests: [not_null, nonnegative]
+      - name: ambiguous_orders
+        data_tests: [not_null, nonnegative]
+      - name: unmatched_orders
+        data_tests: [not_null, nonnegative]
+      - name: confirmed_orders
+        data_tests: [not_null, nonnegative]
+      - name: shipped_orders
+        data_tests: [not_null, nonnegative]
+      - name: delivered_orders
+        data_tests: [not_null, nonnegative]
+      - name: returned_orders
+        data_tests: [not_null, nonnegative]
+      - name: out_of_stock_orders
+        data_tests: [not_null, nonnegative]
+      - name: confirmation_rate
+        data_tests: [between_zero_and_one]
+      - name: delivery_rate
+        data_tests: [between_zero_and_one]
+      - name: return_rate
+        data_tests: [between_zero_and_one]
+      - name: cost_per_lightfunnels_order_usd
+        data_tests: [nonnegative]
+      - name: cost_per_confirmed_order_usd
+        data_tests: [nonnegative]
+      - name: marketing_cost_per_delivered_order_usd
+        data_tests: [nonnegative]
+      - name: product_cogs_usd
+        data_tests: [not_null, nonnegative]
+      - name: call_center_cost_usd
+        data_tests: [not_null, nonnegative]
+      - name: logistics_cost_usd
+        data_tests: [not_null, nonnegative]
+      - name: known_operational_cost_usd
+        data_tests: [not_null, nonnegative]
+      - name: total_known_usd_cost
+        data_tests: [not_null, nonnegative]
+      - name: known_usd_cost_per_delivered_order
+        data_tests: [nonnegative]
+  - name: sama_pilot_unified_daily
+    description: "Acquisition-date target-cohort trend; delivered and returned are final outcomes of each Lightfunnels intent cohort, not same-day operational events."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, report_date]
+      - sama_unified_daily_reconciles
+      - expression_is_true:
+          expression: "delivered_orders <= shipped_orders"
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: report_date
+        data_tests:
+          - not_null
+          - date_between:
+              start_date: "2026-03-01"
+              end_date: "2026-07-31"
+      - name: reporting_timezone
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [Etc/GMT-1]
+      - name: spend_usd
+        data_tests: [not_null, nonnegative]
+      - name: impressions
+        data_tests: [not_null, nonnegative]
+      - name: destination_clicks
+        data_tests: [not_null, nonnegative]
+      - name: platform_conversions
+        data_tests: [not_null, nonnegative]
+      - name: checkouts
+        data_tests: [not_null, nonnegative]
+      - name: lightfunnels_orders
+        data_tests: [not_null, nonnegative]
+      - name: matched_orders
+        data_tests: [not_null, nonnegative]
+      - name: ambiguous_orders
+        data_tests: [not_null, nonnegative]
+      - name: unmatched_orders
+        data_tests: [not_null, nonnegative]
+      - name: confirmed_orders
+        data_tests: [not_null, nonnegative]
+      - name: shipped_orders
+        data_tests: [not_null, nonnegative]
+      - name: delivered_orders
+        data_tests: [not_null, nonnegative]
+      - name: returned_orders
+        data_tests: [not_null, nonnegative]
+      - name: out_of_stock_orders
+        data_tests: [not_null, nonnegative]
+      - name: confirmation_rate
+        data_tests: [between_zero_and_one]
+      - name: delivery_rate
+        data_tests: [between_zero_and_one]
+      - name: return_rate
+        data_tests: [between_zero_and_one]
+      - name: marketing_cost_per_order_usd
+        data_tests: [nonnegative]
+      - name: marketing_cost_per_confirmed_usd
+        data_tests: [nonnegative]
+      - name: marketing_cost_per_delivered_usd
+        data_tests: [nonnegative]
+  - name: sama_pilot_unified_native_economics
+    description: "High-confidence target-TikTok COD collections by native currency and economic status, with USD costs alongside but never netted across currencies."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, currency, economic_status]
+      - sama_unified_native_reconciles
+      - expression_is_true:
+          expression: "abs(known_operational_cost_usd - (product_cogs_usd + call_center_cost_usd + logistics_cost_usd)) <= 0.000001"
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: currency
+        description: "Authoritative native currency, or UNSPECIFIED when a non-delivered matched order has USD costs but no native commercial currency."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [SAR, AED, KWD, UNSPECIFIED]
+      - name: economic_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [FX_REQUIRED, SEPARATE_CURRENCIES]
+      - name: delivered_orders
+        data_tests: [not_null, nonnegative]
+      - name: collected_native_currency
+        data_tests: [not_null, nonnegative]
+      - name: cod_fee_native_currency
+        data_tests: [not_null, nonnegative]
+      - name: cash_after_cod_fee_native_currency
+        data_tests: [not_null, nonnegative]
+      - name: product_cogs_usd
+        data_tests: [not_null, nonnegative]
+      - name: call_center_cost_usd
+        data_tests: [not_null, nonnegative]
+      - name: logistics_cost_usd
+        data_tests: [not_null, nonnegative]
+      - name: known_operational_cost_usd
+        data_tests: [not_null, nonnegative]

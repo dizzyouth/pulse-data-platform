@@ -1,0 +1,2 @@
+SELECT business_id, confirmed_orders
+FROM marts.sama_pilot_unified_overview

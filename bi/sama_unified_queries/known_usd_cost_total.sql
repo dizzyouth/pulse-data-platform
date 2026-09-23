@@ -1,0 +1,2 @@
+SELECT business_id, total_known_usd_cost
+FROM marts.sama_pilot_unified_overview

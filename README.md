@@ -2667,3 +2667,22 @@ synthetic fixture. See
 [`docs/phase_6_5b_sama_tiktok.md`](docs/phase_6_5b_sama_tiktok.md) for source
 lineage, metric semantics, DQ controls, warehouse/dbt/BI outputs, and local
 validation commands.
+
+## Phase 6.5C — unified real business dashboard
+
+The SAMA pilot now has one primary executive operating view built only from the
+validated 6.5A/6.5B warehouse facts and marts. The new dbt presentation layer
+reconciles target TikTok spend and platform activity with Lightfunnels intent,
+confirmed/shipped outcomes, sibling Delivered/Returned terminal outcomes, and
+the target cohort's known USD operating costs. Its daily view uses acquisition
+cohort dates and preserves both marketing-only days and the observed campaign
+boundary day.
+
+**Pulse — Unified Business Overview** is aggregate-only and leaves **Pulse —
+Real COD Pilot** and **Pulse — Real TikTok Performance** intact. USD marketing
+and operational costs may be added; native SAR/AED/KWD Cash Collected and COD
+Fee remain separate with `FX_REQUIRED`. No profit, contribution, margin, MER,
+or observed business ROAS is produced without trusted FX. See
+[`docs/phase_6_5c_unified_business_dashboard.md`](docs/phase_6_5c_unified_business_dashboard.md)
+for grains, cohort/date semantics, cost rules, attribution limits, dashboard
+layout, privacy controls, and targeted validation commands.

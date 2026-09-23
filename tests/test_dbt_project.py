@@ -85,6 +85,9 @@ EXPECTED_MARTS = {
     "sama_pilot_tiktok_native_performance",
     "sama_pilot_tiktok_campaign_outcomes",
     "sama_pilot_tiktok_data_quality",
+    "sama_pilot_unified_overview",
+    "sama_pilot_unified_daily",
+    "sama_pilot_unified_native_economics",
 }
 
 
@@ -127,7 +130,12 @@ class DbtProjectContractTests(unittest.TestCase):
         sql = "\n".join(path.read_text(encoding="utf-8") for path in marts_dir.glob("*.sql"))
         for source in EXPECTED_SOURCES:
             self.assertIn(f"source('analytics', '{source}')", sql)
-        self.assertNotIn("ref(", sql)
+        legacy_sql = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in marts_dir.glob("*.sql")
+            if not path.stem.startswith("sama_pilot_unified_")
+        )
+        self.assertNotIn("ref(", legacy_sql)
 
     def test_revenue_mart_preserves_business_and_currency_grain(self) -> None:
         sql = (DBT_ROOT / "models" / "marts" / "revenue_by_day.sql").read_text(

@@ -47,6 +47,9 @@ EXPECTED_MARTS = {
     "marts.sama_pilot_tiktok_native_performance",
     "marts.sama_pilot_tiktok_campaign_outcomes",
     "marts.sama_pilot_tiktok_data_quality",
+    "marts.sama_pilot_unified_overview",
+    "marts.sama_pilot_unified_daily",
+    "marts.sama_pilot_unified_native_economics",
 }
 
 
@@ -89,6 +92,7 @@ class MetabaseConfigurationTests(unittest.TestCase):
                 "queries", "marketing_queries", "operations_queries",
                 "economics_queries", "olist_queries", "uci_queries",
                 "sama_pilot_queries", "sama_tiktok_queries",
+                "sama_unified_queries",
             )
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
@@ -233,6 +237,31 @@ class MetabaseConfigurationTests(unittest.TestCase):
             self.assertIn("business_id", text)
             for forbidden in ("phone", "email", "address", "tracking"):
                 self.assertNotIn(forbidden, text)
+
+    def test_sama_unified_dashboard_uses_exact_and_non_scroll_executive_cards(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        self.assertIn('"scalar.compact_primary_number"] = False', source)
+        self.assertIn('scalar_settings("target_spend_usd", money=True, exact=True)', source)
+        for title in (
+            "Confirmation Rate",
+            "Delivery Rate",
+            "Efficiency Return Rate",
+            "Cost / Lightfunnels Order",
+            "Cost / Confirmed Order",
+            "Efficiency Marketing Cost / Delivered",
+        ):
+            self.assertIn(f'"title": "{title}"', source)
+        self.assertIn('"previous_title": "Efficiency & Conversion"', source)
+        self.assertIn('"card.title": "Return Rate"', source)
+        self.assertIn('"card.title": "Marketing Cost / Delivered"', source)
+        self.assertIn('"display": "text"', source)
+        self.assertIn('"## FX_REQUIRED\\n\\n"', source)
+        self.assertIn("Marketing and known operating costs are USD.", source)
+        self.assertIn("COD collections are retained in native currencies.", source)
+        self.assertIn(
+            "Cross-currency profit, contribution, margin and business ROAS are unavailable",
+            source,
+        )
 
 
 class MetabaseProvisioningTests(unittest.TestCase):

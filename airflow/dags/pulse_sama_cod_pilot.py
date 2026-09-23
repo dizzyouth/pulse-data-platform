@@ -1,4 +1,4 @@
-"""Manual, local-only Phase 6.5A/6.5B COD and TikTok pilot orchestration."""
+"""Manual, local-only Phase 6.5A/6.5B/6.5C pilot orchestration."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ DBT_MODELS = " ".join((
     "sama_pilot_native_economics", "sama_pilot_data_quality",
     "sama_pilot_tiktok_native_performance", "sama_pilot_tiktok_campaign_outcomes",
     "sama_pilot_tiktok_data_quality",
+    "sama_pilot_unified_overview", "sama_pilot_unified_daily",
+    "sama_pilot_unified_native_economics",
 ))
 
 with DAG(

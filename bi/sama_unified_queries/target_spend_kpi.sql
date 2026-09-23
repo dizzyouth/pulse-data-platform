@@ -1,0 +1,2 @@
+SELECT business_id, marketing_spend_usd AS target_spend_usd
+FROM marts.sama_pilot_unified_overview

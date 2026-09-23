@@ -1018,6 +1018,294 @@ def _ensure_sama_tiktok_dashboard(session_id: str, database_id: int) -> None:
     print(f"Real TikTok performance dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
 
 
+def _ensure_sama_unified_dashboard(session_id: str, database_id: int) -> None:
+    """Create the aggregate-only Phase 6.5C executive operating view."""
+    def api(method: str, path: str, payload=None):
+        return _request(method, path, payload, session_id)
+
+    def field_format(name: str, *, decimals: int, style: str | None = None,
+                     currency: str | None = None) -> dict[str, Any]:
+        formatting: dict[str, Any] = {"decimals": decimals}
+        if style is not None:
+            formatting["number_style"] = style
+        if currency is not None:
+            formatting.update({"currency": currency, "currency_style": "symbol",
+                               "currency_in_header": True})
+        return {json.dumps(["name", name], separators=(",", ":")): formatting}
+
+    def scalar_settings(field: str, *, money: bool = False,
+                        percent: bool = False, exact: bool = False) -> dict[str, Any]:
+        settings = {
+            "scalar.field": field,
+            "column_settings": field_format(
+                field,
+                decimals=2 if money or percent else 0,
+                style="currency" if money else "percent" if percent else None,
+                currency="USD" if money else None,
+            ),
+        }
+        if exact:
+            settings["scalar.compact_primary_number"] = False
+        return settings
+
+    available = api("POST", "/api/dataset", {
+        "database": database_id, "type": "native", "parameters": [],
+        "native": {
+            "query": "SELECT to_regclass('marts.sama_pilot_unified_overview') IS NOT NULL",
+            "template-tags": {},
+        },
+    })
+    rows = available.get("data", {}).get("rows", []) if available.get("status") == "completed" else []
+    if not rows or not rows[0][0]:
+        print("SAMA unified marts are not loaded; skipping the optional unified dashboard.")
+        return
+
+    collection_name = "Pulse Unified Business Overview"
+    collection = _unique(api("GET", "/api/collection"), collection_name)
+    if collection is None:
+        collection = api("POST", "/api/collection", {"name": collection_name})
+    collection_id = collection["id"]
+    items = api("GET", f"/api/collection/{collection_id}/items").get("data", [])
+
+    money_fields = (
+        "target_spend_usd", "marketing_cost_per_delivered_order_usd",
+        "known_usd_cost_per_delivered_order", "cost_per_lightfunnels_order_usd",
+        "cost_per_confirmed_order_usd", "amount_usd", "total_known_usd_cost",
+        "spend_usd", "cost_per_order_usd", "cost_per_confirmed_usd",
+        "cost_per_delivered_usd",
+    )
+    money_format = {}
+    for field in money_fields:
+        money_format.update(field_format(field, decimals=2, style="currency", currency="USD"))
+    rate_format = {}
+    for field in ("confirmation_rate", "delivery_rate", "return_rate"):
+        rate_format.update(field_format(field, decimals=2, style="percent"))
+    count_format = {}
+    for field in (
+        "stage_count", "lightfunnels_orders", "confirmed_orders", "delivered_orders",
+        "returned_orders", "platform_conversions", "issue_count",
+    ):
+        count_format.update(field_format(field, decimals=0))
+    native_format = {
+        **field_format("delivered_orders", decimals=0),
+        **field_format("collected_native_currency", decimals=2),
+        **field_format("cod_fee_native_currency", decimals=2),
+        **field_format("cash_after_cod_fee_native_currency", decimals=2),
+    }
+
+    specs = (
+        {"filename": "target_spend_kpi", "title": "Target Spend", "display": "scalar",
+         "columns": "target_spend_usd",
+         "settings": scalar_settings("target_spend_usd", money=True, exact=True),
+         "description": "TikTok Marketing Spend in USD for the 12 linked target campaigns.",
+         "layout": (0, 0, 3, 4)},
+        {"filename": "lightfunnels_orders_kpi", "title": "Lightfunnels Orders", "display": "scalar",
+         "columns": "lightfunnels_orders", "settings": scalar_settings("lightfunnels_orders"),
+         "description": "Observed acquisition intents attributed to the target TikTok cohort.",
+         "layout": (0, 3, 3, 4)},
+        {"filename": "confirmed_orders_kpi", "title": "Confirmed Orders", "display": "scalar",
+         "columns": "confirmed_orders", "settings": scalar_settings("confirmed_orders"),
+         "description": "High-confidence matched orders confirmed for COD fulfillment.",
+         "layout": (0, 6, 3, 4)},
+        {"filename": "delivered_orders_kpi", "title": "Delivered Orders", "display": "scalar",
+         "columns": "delivered_orders", "settings": scalar_settings("delivered_orders"),
+         "description": "Delivered terminal outcomes for the acquisition cohort.",
+         "layout": (0, 9, 3, 4)},
+        {"filename": "return_rate_kpi", "title": "Return Rate", "display": "scalar",
+         "columns": "return_rate", "settings": scalar_settings("return_rate", percent=True),
+         "description": "Returned Orders divided by Shipped Orders.",
+         "layout": (0, 12, 4, 4)},
+        {"filename": "marketing_cost_delivered_kpi", "title": "Marketing Cost / Delivered",
+         "display": "scalar", "columns": "marketing_cost_per_delivered_order_usd",
+         "settings": scalar_settings("marketing_cost_per_delivered_order_usd", money=True),
+         "description": "TikTok Marketing Spend divided by Delivered Orders.",
+         "layout": (0, 16, 4, 4)},
+        {"filename": "known_cost_delivered_kpi", "title": "Known USD Cost / Delivered",
+         "display": "scalar", "columns": "known_usd_cost_per_delivered_order",
+         "settings": scalar_settings("known_usd_cost_per_delivered_order", money=True),
+         "description": "Known USD Costs divided by Delivered Orders; not total business cost.",
+         "layout": (0, 20, 4, 4)},
+        {"filename": "acquisition_outcomes", "title": "Acquisition to Observed Business Outcomes",
+         "display": "bar", "columns": "stage_name, stage_count", "order_by": "stage_order",
+         "settings": {"graph.dimensions": ["stage_name"], "graph.metrics": ["stage_count"],
+                      "graph.show_values": True, "graph.legend_type": "none",
+                      "column_settings": count_format},
+         "description": "Platform Conversions are distinct from observed orders. Delivered and Returned "
+                        "are sibling terminal outcomes of Shipped Orders, not sequential stages.",
+         "layout": (4, 0, 24, 8)},
+        {"filename": "efficiency_conversion", "title": "Confirmation Rate",
+         "previous_title": "Efficiency & Conversion", "display": "scalar",
+         "columns": "confirmation_rate",
+         "settings": scalar_settings("confirmation_rate", percent=True),
+         "description": "Confirmed Orders divided by high-confidence Matched Orders.",
+         "layout": (12, 0, 4, 4)},
+        {"filename": "efficiency_conversion", "title": "Delivery Rate", "display": "scalar",
+         "columns": "delivery_rate", "settings": scalar_settings("delivery_rate", percent=True),
+         "description": "Delivered Orders divided by Shipped Orders.",
+         "layout": (12, 4, 4, 4)},
+        {"filename": "efficiency_conversion", "title": "Efficiency Return Rate", "display": "scalar",
+         "columns": "return_rate",
+         "settings": {**scalar_settings("return_rate", percent=True), "card.title": "Return Rate"},
+         "description": "Returned Orders divided by Shipped Orders.",
+         "layout": (12, 8, 4, 4)},
+        {"filename": "efficiency_conversion", "title": "Cost / Lightfunnels Order",
+         "display": "scalar", "columns": "cost_per_lightfunnels_order_usd",
+         "settings": scalar_settings("cost_per_lightfunnels_order_usd", money=True),
+         "description": "Target TikTok Marketing Spend divided by Lightfunnels Orders.",
+         "layout": (12, 12, 4, 4)},
+        {"filename": "efficiency_conversion", "title": "Cost / Confirmed Order",
+         "display": "scalar", "columns": "cost_per_confirmed_order_usd",
+         "settings": scalar_settings("cost_per_confirmed_order_usd", money=True),
+         "description": "Target TikTok Marketing Spend divided by Confirmed Orders.",
+         "layout": (12, 16, 4, 4)},
+        {"filename": "efficiency_conversion", "title": "Efficiency Marketing Cost / Delivered",
+         "display": "scalar", "columns": "marketing_cost_per_delivered_order_usd",
+         "settings": {**scalar_settings("marketing_cost_per_delivered_order_usd", money=True),
+                      "card.title": "Marketing Cost / Delivered"},
+         "description": "Target TikTok Marketing Spend divided by Delivered Orders.",
+         "layout": (12, 20, 4, 4)},
+        {"filename": "usd_cost_stack", "title": "Known USD Cost Stack", "display": "bar",
+         "columns": "cost_category, amount_usd", "order_by": "cost_order",
+         "settings": {"graph.dimensions": ["cost_category"], "graph.metrics": ["amount_usd"],
+                      "graph.show_values": True, "graph.legend_type": "none",
+                      "column_settings": money_format},
+         "description": "Additive USD categories only: target marketing, Product COGS, Call Center, and Logistics.",
+         "layout": (18, 0, 16, 8)},
+        {"filename": "known_usd_cost_total", "title": "Known USD Cost Total", "display": "scalar",
+         "columns": "total_known_usd_cost", "settings": scalar_settings("total_known_usd_cost", money=True),
+         "description": "Target marketing plus known operational USD costs, shown separately from the stack.",
+         "layout": (18, 16, 8, 8)},
+        {"filename": "native_cash_collection", "title": "Native Currency — not converted",
+         "display": "table",
+         "columns": "currency, economic_status, delivered_orders, collected_native_currency, "
+                    "cod_fee_native_currency, cash_after_cod_fee_native_currency",
+         "settings": {"column_settings": native_format},
+         "description": "Cash Collected and COD Fee remain separated by native currency; cash after COD fee is not profit.",
+         "layout": (26, 0, 24, 8)},
+        {"filename": "daily_target_spend", "title": "Daily Target TikTok Spend", "display": "line",
+         "columns": "report_date, spend_usd",
+         "settings": {"graph.dimensions": ["report_date"], "graph.metrics": ["spend_usd"],
+                      "column_settings": money_format},
+         "description": "Daily USD spend for linked target campaigns in UTC+1.",
+         "layout": (34, 0, 12, 8)},
+        {"filename": "daily_cohort_outcomes", "title": "Daily Acquisition-Cohort Outcomes",
+         "display": "line",
+         "columns": "report_date, lightfunnels_orders, confirmed_orders, delivered_orders, returned_orders",
+         "settings": {"graph.dimensions": ["report_date"],
+                      "graph.metrics": ["lightfunnels_orders", "confirmed_orders", "delivered_orders", "returned_orders"],
+                      "column_settings": count_format},
+         "description": "Final outcomes grouped by acquisition/Lightfunnels intent date, not outcome event date.",
+         "layout": (34, 12, 12, 8)},
+        {"filename": "campaign_decisions", "title": "Campaign Decision Table", "display": "table",
+         "columns": "campaign_name, spend_usd, platform_conversions, lightfunnels_orders, "
+                    "confirmed_orders, delivered_orders, returned_orders, cost_per_order_usd, "
+                    "cost_per_confirmed_usd, cost_per_delivered_usd, confirmation_rate, delivery_rate, return_rate",
+         "settings": {"column_settings": {**money_format, **rate_format, **count_format}},
+         "description": "Target campaigns only. Observed business outcomes remain at Campaign level.",
+         "layout": (42, 0, 24, 10)},
+        {"filename": "measurement_limitations", "title": "Measurement & Data Limitations",
+         "display": "table", "columns": "measurement_limitation, issue_count",
+         "settings": {"column_settings": count_format},
+         "description": "Decision-relevant observations only; inactive Ad-Day detail remains outside this executive view.",
+         "layout": (52, 0, 24, 7)},
+    )
+
+    managed_cards = []
+    collection_cards = [item for item in items if item.get("model") == "card"]
+    for spec in specs:
+        base = (Path(__file__).parent / "sama_unified_queries" / f"{spec['filename']}.sql").read_text(
+            encoding="utf-8"
+        ).rstrip(";\n")
+        query_sql = (f"SELECT {spec['columns']} FROM (\n" + base
+                     + "\n) AS unified_card\nWHERE 1=1\n[[AND business_id = {{business}}]]")
+        if spec.get("order_by"):
+            query_sql += f"\nORDER BY {spec['order_by']}"
+        tags = {"business": {"id": "business", "name": "business", "display-name": "Business",
+                             "type": "text", "required": False}}
+        query = {"database": database_id, "type": "native",
+                 "native": {"query": query_sql, "template-tags": tags}}
+        result = api("POST", "/api/dataset", {**query, "parameters": []})
+        if result.get("status") != "completed":
+            detail = result.get("error", result.get("status"))
+            raise RuntimeError(f"SAMA unified BI query {spec['filename']} failed: {detail}")
+        payload = {"name": spec["title"], "description": spec["description"],
+                   "collection_id": collection_id, "display": spec["display"],
+                   "dataset_query": query, "visualization_settings": spec["settings"]}
+        existing = _unique(collection_cards, spec["title"])
+        if existing is None and spec.get("previous_title"):
+            existing = _unique(collection_cards, spec["previous_title"])
+        card = (api("PUT", f"/api/card/{existing['id']}", payload)
+                if existing else api("POST", "/api/card", payload))
+        managed_cards.append((card, spec))
+
+    title = "Pulse — Unified Business Overview"
+    dashboard = _unique([item for item in items if item.get("model") == "dashboard"], title)
+    description = (
+        "Primary executive operating view for the target TikTok-to-Lightfunnels acquisition cohort."
+    )
+    if dashboard is None:
+        dashboard = api("POST", "/api/dashboard", {
+            "name": title, "collection_id": collection_id, "description": description,
+        })
+    dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
+    economic_card = _unique(collection_cards, "FX_REQUIRED — Economic Completeness")
+    dashcards = [
+        item for item in dashboard.get("dashcards", [])
+        if economic_card is None or item.get("card_id") != economic_card["id"]
+    ]
+    for index, (card, spec) in enumerate(managed_cards):
+        mappings = [{"parameter_id": "business", "card_id": card["id"],
+                     "target": ["variable", ["template-tag", "business"]]}]
+        existing = next((item for item in dashcards if item.get("card_id") == card["id"]), None)
+        row, col, size_x, size_y = spec["layout"]
+        layout = {"row": row, "col": col, "size_x": size_x, "size_y": size_y,
+                  "parameter_mappings": mappings, "visualization_settings": {}}
+        if existing:
+            existing.update(layout)
+        else:
+            dashcards.append({"id": -(800 + index), "card_id": card["id"], **layout})
+
+    economic_text = (
+        "## FX_REQUIRED\n\n"
+        "Marketing and known operating costs are USD.  \n"
+        "COD collections are retained in native currencies.  \n"
+        "Cross-currency profit, contribution, margin and business ROAS are unavailable "
+        "until a trusted FX source is supplied."
+    )
+    text_settings = {
+        "virtual_card": {
+            "name": None,
+            "display": "text",
+            "visualization_settings": {},
+            "dataset_query": {},
+            "archived": False,
+        },
+        "text": economic_text,
+    }
+    existing_text = next((
+        item for item in dashcards
+        if item.get("card_id") is None
+        and str(item.get("visualization_settings", {}).get("text", "")).startswith(
+            "## FX_REQUIRED"
+        )
+    ), None)
+    text_layout = {
+        "row": 59, "col": 0, "size_x": 24, "size_y": 5,
+        "parameter_mappings": [], "visualization_settings": text_settings,
+    }
+    if existing_text:
+        existing_text.update(text_layout)
+    else:
+        dashcards.append({"id": -900, "card_id": None, **text_layout})
+    parameter = {"id": "business", "name": "Business", "slug": "business", "type": "string/="}
+    others = [item for item in dashboard.get("parameters", []) if item["id"] != "business"]
+    api("PUT", f"/api/dashboard/{dashboard['id']}", {
+        "name": title, "description": description,
+        "dashcards": dashcards, "parameters": [parameter, *others],
+    })
+    print(f"Unified business dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
+
+
 def main() -> int:
     properties = _request("GET", "/api/session/properties")
     setup_token = properties.get("setup-token")
@@ -1034,6 +1322,7 @@ def main() -> int:
     _ensure_uci_dashboard(session_id, database_id)
     _ensure_sama_pilot_dashboard(session_id, database_id)
     _ensure_sama_tiktok_dashboard(session_id, database_id)
+    _ensure_sama_unified_dashboard(session_id, database_id)
     if __package__:
         from .monitoring_dashboard import ensure_dashboard
     else:
