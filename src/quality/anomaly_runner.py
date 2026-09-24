@@ -35,6 +35,17 @@ def policy_for(metric_name: str, minimum_history: int) -> AnomalyPolicy:
         return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9,
                              baseline_strategies=("day_of_week", "trend", "robust_history"),
                              minimum_absolute_deviation=5, **context)
+    if metric_name == "daily_target_spend":
+        return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9,
+                             baseline_strategies=("day_of_week", "trend", "robust_history"),
+                             minimum_absolute_deviation=25, **context)
+    if metric_name in {
+        "lightfunnels_order_volume", "confirmed_order_volume",
+        "delivered_order_volume", "returned_order_volume",
+    }:
+        return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9,
+                             baseline_strategies=("day_of_week", "trend", "robust_history"),
+                             minimum_absolute_deviation=5, **context)
     return AnomalyPolicy(minimum_history=minimum_history, warning_ratio=.5, critical_ratio=.9,
                          maximum_training_window=window)
 

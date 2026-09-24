@@ -146,6 +146,89 @@ where abs(economics.product_cogs_usd - overview.product_cogs_usd) > 0.000001
    or abs(economics.known_operational_cost_usd - overview.known_operational_cost_usd) > 0.000001
 {% endtest %}
 
+{% test sama_business_leakage_reconciles(model) %}
+with expected as (
+    select business_id, stage, expected_count
+    from {{ ref('sama_pilot_unified_overview') }}
+    cross join lateral (
+        values
+            ('PLATFORM_VS_OBSERVED', greatest(platform_conversions - lightfunnels_orders, 0)),
+            ('IDENTITY_UNRESOLVED', ambiguous_orders + unmatched_orders),
+            ('MATCHED_NOT_CONFIRMED', greatest(matched_orders - confirmed_orders, 0)),
+            ('CONFIRMED_NOT_SHIPPED', greatest(confirmed_orders - shipped_orders, 0)),
+            ('RETURNED_AFTER_SHIPMENT', returned_orders),
+            ('SHIPPED_TERMINAL_UNRESOLVED', greatest(shipped_orders - delivered_orders - returned_orders, 0))
+    ) as stages(stage, expected_count)
+)
+select actual.*
+from {{ model }} as actual
+full outer join expected
+  on actual.business_id = expected.business_id
+ and actual.leakage_stage = expected.stage
+where actual.business_id is null
+   or expected.business_id is null
+   or actual.observed_count <> expected.expected_count
+{% endtest %}
+
+{% test sama_campaign_diagnostics_reconciles(model) %}
+with source_campaigns as (
+    select *
+    from {{ ref('sama_pilot_tiktok_campaign_outcomes') }}
+    where is_target_campaign
+), expected as (
+    select
+        current.business_id,
+        current.campaign_id,
+        sum(peer.confirmed_orders)::double precision / nullif(sum(peer.matched_orders), 0)
+            as peer_confirmation_rate,
+        sum(peer.delivered_orders)::double precision / nullif(sum(peer.shipped_orders), 0)
+            as peer_delivery_rate,
+        sum(peer.returned_orders)::double precision / nullif(sum(peer.shipped_orders), 0)
+            as peer_return_rate,
+        sum(peer.spend_usd)::double precision / nullif(sum(peer.initial_orders), 0)
+            as peer_cost_per_lightfunnels_order_usd,
+        sum(peer.spend_usd)::double precision / nullif(sum(peer.delivered_orders), 0)
+            as peer_cost_per_delivered_order_usd
+    from source_campaigns as current
+    join source_campaigns as peer
+      on peer.business_id = current.business_id
+     and peer.campaign_id <> current.campaign_id
+    group by current.business_id, current.campaign_id
+)
+select actual.*
+from {{ model }} as actual
+full outer join expected using (business_id, campaign_id)
+where actual.business_id is null
+   or expected.business_id is null
+   or abs(actual.peer_confirmation_rate - expected.peer_confirmation_rate) > 0.000000001
+   or abs(actual.peer_delivery_rate - expected.peer_delivery_rate) > 0.000000001
+   or abs(actual.peer_return_rate - expected.peer_return_rate) > 0.000000001
+   or abs(actual.peer_cost_per_lightfunnels_order_usd - expected.peer_cost_per_lightfunnels_order_usd) > 0.000001
+   or abs(actual.peer_cost_per_delivered_order_usd - expected.peer_cost_per_delivered_order_usd) > 0.000001
+{% endtest %}
+
+{% test sama_intelligence_signals_valid(model) %}
+select signals.*
+from {{ model }} as signals
+left join {{ ref('sama_pilot_tiktok_campaign_outcomes') }} as campaigns
+  on signals.scope_type = 'CAMPAIGN'
+ and signals.business_id = campaigns.business_id
+ and signals.scope_id = campaigns.campaign_id
+ and campaigns.is_target_campaign
+where signals.evidence_summary = ''
+   or signals.recommended_next_step = ''
+   or signals.limitation = ''
+   or signals.causal_claim
+   or (signals.confidence = 'LOW' and signals.priority = 'HIGH')
+   or (signals.scope_type = 'CAMPAIGN' and campaigns.campaign_id is null)
+   or lower(signals.evidence_summary || ' ' || signals.why_it_matters || ' ' ||
+            signals.recommended_next_step || ' ' || signals.limitation)
+      ~ '(phone|email|street address|tracking number)'
+   or lower(signals.evidence_summary || ' ' || signals.why_it_matters || ' ' ||
+            signals.recommended_next_step)
+      ~ '(net profit|business roas|contribution margin|\bmer\b)'
+{% endtest %}
+
 {% test uci_daily_signed_reconciliation(model) %}
 select *
 from {{ model }}

@@ -2686,3 +2686,21 @@ or observed business ROAS is produced without trusted FX. See
 [`docs/phase_6_5c_unified_business_dashboard.md`](docs/phase_6_5c_unified_business_dashboard.md)
 for grains, cohort/date semantics, cost rules, attribution limits, dashboard
 layout, privacy controls, and targeted validation commands.
+
+## Phase 6.6A — explainable decision intelligence
+
+Pulse now adds a deterministic evidence layer over the validated real-pilot
+marts. Business leakage keeps measurement, identity, confirmation, and
+fulfillment semantics separate. Target campaigns are compared with aggregate
+leave-one-out peer baselines, with explicit LOW/MEDIUM/HIGH evidence bands and
+benchmark-gap estimates that are never presented as causal impact, forecasts,
+or guaranteed opportunity.
+
+The provider-neutral signal contract exposes observed and baseline values,
+gaps, evidence, investigation guidance, confidence, and explicit limitations;
+every signal has `causal_claim=false`. The local CLI and separate **Pulse —
+Intelligence** dashboard render these deterministic signals without an LLM or
+network call. The existing contextual anomaly engine now consumes the unified
+daily pilot series. `FX_REQUIRED`, PII protections, campaign-only downstream
+attribution, and the prohibition on autonomous budget changes remain in force.
+See [`docs/phase_6_6a_explainable_decision_intelligence.md`](docs/phase_6_6a_explainable_decision_intelligence.md).

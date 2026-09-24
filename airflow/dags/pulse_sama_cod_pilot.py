@@ -1,4 +1,4 @@
-"""Manual, local-only Phase 6.5A/6.5B/6.5C pilot orchestration."""
+"""Manual, local-only Phase 6.5A-6.6A pilot orchestration."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ DBT_MODELS = " ".join((
     "sama_pilot_tiktok_data_quality",
     "sama_pilot_unified_overview", "sama_pilot_unified_daily",
     "sama_pilot_unified_native_economics",
+    "sama_pilot_business_leakage", "sama_pilot_campaign_diagnostics",
+    "sama_pilot_intelligence_signals",
 ))
 
 with DAG(
@@ -59,6 +61,11 @@ with DAG(
         bash_command=f"dbt test --project-dir /opt/pulse/dbt --select {DBT_MODELS}",
         cwd=PROJECT_ROOT,
     )
+    evaluate_pilot_anomalies = BashOperator(
+        task_id="evaluate_pilot_anomalies_nonblocking",
+        bash_command="python -m src.quality.anomaly_runner --persist",
+        cwd=PROJECT_ROOT,
+    )
 
     (
         validate_private_sources
@@ -67,4 +74,5 @@ with DAG(
         >> load_tiktok_marketing
         >> run_dbt
         >> test_dbt
+        >> evaluate_pilot_anomalies
     )

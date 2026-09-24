@@ -50,6 +50,9 @@ EXPECTED_MARTS = {
     "marts.sama_pilot_unified_overview",
     "marts.sama_pilot_unified_daily",
     "marts.sama_pilot_unified_native_economics",
+    "marts.sama_pilot_business_leakage",
+    "marts.sama_pilot_campaign_diagnostics",
+    "marts.sama_pilot_intelligence_signals",
 }
 
 
@@ -93,6 +96,7 @@ class MetabaseConfigurationTests(unittest.TestCase):
                 "economics_queries", "olist_queries", "uci_queries",
                 "sama_pilot_queries", "sama_tiktok_queries",
                 "sama_unified_queries",
+                "sama_intelligence_queries",
             )
             for path in (PROJECT_ROOT / "bi" / directory).glob("*.sql")
         )
@@ -262,6 +266,32 @@ class MetabaseConfigurationTests(unittest.TestCase):
             "Cross-currency profit, contribution, margin and business ROAS are unavailable",
             source,
         )
+
+    def test_sama_intelligence_priority_tables_are_compact_and_separate(self) -> None:
+        source = (PROJECT_ROOT / "bi" / "setup_metabase.py").read_text(encoding="utf-8")
+        priority = (PROJECT_ROOT / "bi" / "sama_intelligence_queries" /
+                    "priority_signals.sql").read_text(encoding="utf-8").lower()
+        investigations = (PROJECT_ROOT / "bi" / "sama_intelligence_queries" /
+                          "recommended_investigations.sql").read_text(encoding="utf-8").lower()
+
+        self.assertIn('"title": "Priority Signals"', source)
+        self.assertIn('"columns": "priority, signal, scope, impact, confidence"', source)
+        self.assertIn('"title": "Recommended Investigations"', source)
+        self.assertIn('"columns": "signal, scope, recommended_investigation"', source)
+        self.assertNotIn(
+            '"columns": "priority, signal, scope, evidence, benchmark_gap_orders, confidence, recommended_investigation"',
+            source,
+        )
+
+        for field in ("signal_order", "priority", "signal_type", "scope_name",
+                      "impact_order_count", "confidence"):
+            self.assertIn(field, priority)
+        self.assertNotIn("evidence_summary", priority)
+        self.assertNotIn("recommended_next_step", priority)
+
+        for field in ("signal_order", "signal_type", "scope_name", "recommended_next_step"):
+            self.assertIn(field, investigations)
+        self.assertNotIn("evidence_summary", investigations)
 
 
 class MetabaseProvisioningTests(unittest.TestCase):

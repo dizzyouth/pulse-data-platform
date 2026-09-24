@@ -709,3 +709,130 @@ models:
         data_tests: [not_null, nonnegative]
       - name: known_operational_cost_usd
         data_tests: [not_null, nonnegative]
+  - name: sama_pilot_business_leakage
+    description: "One row per explicitly named measurement, identity, confirmation, or fulfillment gap; differences are not automatically revenue loss."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, leakage_stage]
+      - sama_business_leakage_reconciles
+      - expression_is_true:
+          expression: "not (is_measurement_gap and is_operational_gap)"
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: leakage_stage
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [PLATFORM_VS_OBSERVED, IDENTITY_UNRESOLVED, MATCHED_NOT_CONFIRMED, CONFIRMED_NOT_SHIPPED, RETURNED_AFTER_SHIPMENT, SHIPPED_TERMINAL_UNRESOLVED]
+      - name: category
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [MEASUREMENT, IDENTITY, CONFIRMATION, FULFILLMENT]
+      - name: observed_count
+        data_tests: [not_null, nonnegative]
+      - name: denominator_count
+        data_tests: [not_null, nonnegative]
+      - name: observed_rate
+        data_tests: [between_zero_and_one]
+      - name: interpretation
+        data_tests: [not_null]
+  - name: sama_pilot_campaign_diagnostics
+    description: "Target-campaign diagnostics against aggregate leave-one-out peer rates and costs; gaps are benchmark estimates, not causal impact or forecasts."
+    data_tests:
+      - unique_combination:
+          column_names: [business_id, campaign_id]
+      - sama_campaign_diagnostics_reconciles
+      - expression_is_true:
+          expression: "peer_matched_orders > 0 and peer_shipped_orders > 0 and peer_lightfunnels_orders > 0 and peer_delivered_orders > 0"
+      - expression_is_true:
+          expression: "confirmation_benchmark_gap_orders >= 0 and delivery_benchmark_gap_orders >= 0 and excess_returns_vs_peer >= 0"
+    columns:
+      - name: business_id
+        data_tests: [not_null]
+      - name: campaign_id
+        data_tests: [not_null]
+      - name: spend_usd
+        data_tests: [not_null, nonnegative]
+      - name: lightfunnels_orders
+        data_tests: [not_null, nonnegative]
+      - name: confirmation_rate
+        data_tests: [between_zero_and_one]
+      - name: delivery_rate
+        data_tests: [between_zero_and_one]
+      - name: return_rate
+        data_tests: [between_zero_and_one]
+      - name: peer_confirmation_rate
+        data_tests: [between_zero_and_one]
+      - name: peer_delivery_rate
+        data_tests: [between_zero_and_one]
+      - name: peer_return_rate
+        data_tests: [between_zero_and_one]
+      - name: cost_per_lightfunnels_order_usd
+        data_tests: [nonnegative]
+      - name: cost_per_confirmed_order_usd
+        data_tests: [nonnegative]
+      - name: cost_per_delivered_order_usd
+        data_tests: [nonnegative]
+      - name: peer_cost_per_lightfunnels_order_usd
+        data_tests: [nonnegative]
+      - name: peer_cost_per_delivered_order_usd
+        data_tests: [nonnegative]
+      - name: confirmation_sample_band
+        data_tests:
+          - accepted_values:
+              values: [LOW, MEDIUM, HIGH]
+      - name: fulfillment_sample_band
+        data_tests:
+          - accepted_values:
+              values: [LOW, MEDIUM, HIGH]
+      - name: acquisition_sample_band
+        data_tests:
+          - accepted_values:
+              values: [LOW, MEDIUM, HIGH]
+      - name: cost_delivered_sample_band
+        data_tests:
+          - accepted_values:
+              values: [LOW, MEDIUM, HIGH]
+  - name: sama_pilot_intelligence_signals
+    description: "Deterministic explainable business and campaign signals with observational evidence, investigation guidance, and explicit causal limitations."
+    data_tests:
+      - unique_combination:
+          column_names: [signal_id]
+      - sama_intelligence_signals_valid
+      - expression_is_true:
+          expression: "not causal_claim"
+      - expression_is_true:
+          expression: "not (confidence = 'LOW' and priority = 'HIGH')"
+    columns:
+      - name: signal_id
+        data_tests: [not_null, unique]
+      - name: business_id
+        data_tests: [not_null]
+      - name: scope_type
+        data_tests:
+          - accepted_values:
+              values: [BUSINESS, CAMPAIGN]
+      - name: signal_category
+        data_tests:
+          - accepted_values:
+              values: [MEASUREMENT, IDENTITY, ACQUISITION, CONFIRMATION, FULFILLMENT, ECONOMICS]
+      - name: priority
+        data_tests:
+          - accepted_values:
+              values: [HIGH, MEDIUM, LOW]
+      - name: confidence
+        data_tests:
+          - accepted_values:
+              values: [HIGH, MEDIUM, LOW]
+      - name: sample_size
+        data_tests: [not_null, nonnegative]
+      - name: impact_order_count
+        data_tests: [nonnegative]
+      - name: evidence_summary
+        data_tests: [not_null]
+      - name: recommended_next_step
+        data_tests: [not_null]
+      - name: limitation
+        data_tests: [not_null]

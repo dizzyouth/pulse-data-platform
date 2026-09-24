@@ -174,4 +174,26 @@ def load_metric_series():
                 rows.append(("order_economics", "analytics", "cod_refusal_economic_loss",
                              {"business_id": business_id, "currency": currency},
                              datetime.combine(day, time.min, timezone.utc), value, day, sample_size))
+        sama_daily_exists = connection.execute(
+            "SELECT to_regclass('marts.sama_pilot_unified_daily') IS NOT NULL"
+        ).fetchone()[0]
+        if sama_daily_exists:
+            pilot_daily = connection.execute("""SELECT business_id,report_date,reporting_timezone,
+              spend_usd,lightfunnels_orders,confirmed_orders,delivered_orders,returned_orders
+              FROM marts.sama_pilot_unified_daily
+              ORDER BY business_id,report_date,reporting_timezone""").fetchall()
+            for (business_id, day, reporting_timezone, spend, lightfunnels, confirmed,
+                 delivered, returned) in pilot_daily:
+                dimensions = {"business_id": business_id,
+                              "reporting_timezone": reporting_timezone}
+                stamp = datetime.combine(day, time.min, timezone.utc)
+                for metric, value in (
+                    ("daily_target_spend", spend),
+                    ("lightfunnels_order_volume", lightfunnels),
+                    ("confirmed_order_volume", confirmed),
+                    ("delivered_order_volume", delivered),
+                    ("returned_order_volume", returned),
+                ):
+                    rows.append(("sama_pilot_unified_daily", "marts", metric, dimensions,
+                                 stamp, value, day, None))
     return _series(rows)

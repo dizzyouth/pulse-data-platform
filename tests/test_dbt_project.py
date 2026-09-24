@@ -88,6 +88,9 @@ EXPECTED_MARTS = {
     "sama_pilot_unified_overview",
     "sama_pilot_unified_daily",
     "sama_pilot_unified_native_economics",
+    "sama_pilot_business_leakage",
+    "sama_pilot_campaign_diagnostics",
+    "sama_pilot_intelligence_signals",
 }
 
 
@@ -133,7 +136,8 @@ class DbtProjectContractTests(unittest.TestCase):
         legacy_sql = "\n".join(
             path.read_text(encoding="utf-8")
             for path in marts_dir.glob("*.sql")
-            if not path.stem.startswith("sama_pilot_unified_")
+            if not path.stem.startswith(("sama_pilot_unified_", "sama_pilot_business_",
+                                         "sama_pilot_campaign_", "sama_pilot_intelligence_"))
         )
         self.assertNotIn("ref(", legacy_sql)
 

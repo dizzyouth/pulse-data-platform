@@ -1306,6 +1306,177 @@ def _ensure_sama_unified_dashboard(session_id: str, database_id: int) -> None:
     print(f"Unified business dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
 
 
+def _ensure_sama_intelligence_dashboard(session_id: str, database_id: int) -> None:
+    """Create the separate Phase 6.6A deterministic intelligence dashboard."""
+    def api(method: str, path: str, payload=None):
+        return _request(method, path, payload, session_id)
+
+    available = api("POST", "/api/dataset", {
+        "database": database_id, "type": "native", "parameters": [],
+        "native": {
+            "query": "SELECT to_regclass('marts.sama_pilot_intelligence_signals') IS NOT NULL",
+            "template-tags": {},
+        },
+    })
+    rows = available.get("data", {}).get("rows", []) if available.get("status") == "completed" else []
+    if not rows or not rows[0][0]:
+        print("SAMA intelligence marts are not loaded; skipping the optional intelligence dashboard.")
+        return
+
+    collection_name = "Pulse Intelligence"
+    collection = _unique(api("GET", "/api/collection"), collection_name)
+    if collection is None:
+        collection = api("POST", "/api/collection", {"name": collection_name})
+    collection_id = collection["id"]
+    items = api("GET", f"/api/collection/{collection_id}/items").get("data", [])
+
+    def number_format(field: str, decimals: int = 0, *, money: bool = False,
+                      percent: bool = False) -> dict[str, Any]:
+        settings: dict[str, Any] = {"decimals": decimals}
+        if money:
+            settings.update({"number_style": "currency", "currency": "USD",
+                             "currency_style": "symbol", "currency_in_header": True})
+        elif percent:
+            settings["number_style"] = "percent"
+        return {json.dumps(["name", field], separators=(",", ":")): settings}
+
+    count_format = {}
+    for field in ("active_high_signals", "active_medium_signals",
+                  "largest_operational_leakage", "identity_unresolved",
+                  "platform_vs_observed_gap", "observed_count"):
+        count_format.update(number_format(field))
+    money_format = {}
+    for field in ("spend_usd", "cost_per_delivered_order_usd",
+                  "peer_cost_per_delivered_order_usd"):
+        money_format.update(number_format(field, 2, money=True))
+    rate_format = {}
+    for field in ("delivery_rate", "peer_delivery_rate", "return_rate", "peer_return_rate"):
+        rate_format.update(number_format(field, 2, percent=True))
+    gap_format = {}
+    for field in ("impact", "delivery_benchmark_gap_orders", "excess_returns_vs_peer"):
+        gap_format.update(number_format(field, 2))
+
+    specs = (
+        {"filename": "high_signals", "title": "Active HIGH Signals", "display": "scalar",
+         "columns": "active_high_signals",
+         "settings": {"scalar.field": "active_high_signals", "column_settings": count_format},
+         "description": "Active deterministic HIGH-priority signals; LOW sample evidence can never produce HIGH priority.",
+         "layout": (0, 0, 5, 4)},
+        {"filename": "medium_signals", "title": "Active MEDIUM Signals", "display": "scalar",
+         "columns": "active_medium_signals",
+         "settings": {"scalar.field": "active_medium_signals", "column_settings": count_format},
+         "description": "Active deterministic MEDIUM-priority signals.",
+         "layout": (0, 5, 5, 4)},
+        {"filename": "largest_operational_leakage", "title": "Largest Operational Leakage",
+         "display": "scalar", "columns": "largest_operational_leakage",
+         "settings": {"scalar.field": "largest_operational_leakage", "column_settings": count_format},
+         "description": "Largest observed operational-stage count; not automatically revenue loss.",
+         "layout": (0, 10, 5, 4)},
+        {"filename": "identity_unresolved", "title": "Identity Unresolved", "display": "scalar",
+         "columns": "identity_unresolved",
+         "settings": {"scalar.field": "identity_unresolved", "column_settings": count_format},
+         "description": "Ambiguous plus unmatched observed orders; no raw PII is exposed.",
+         "layout": (0, 15, 4, 4)},
+        {"filename": "platform_observed_gap", "title": "Platform vs Observed Gap",
+         "display": "scalar", "columns": "platform_vs_observed_gap",
+         "settings": {"scalar.field": "platform_vs_observed_gap", "column_settings": count_format},
+         "description": "Measurement gap, not automatically lost orders or tracking failure.",
+         "layout": (0, 19, 5, 4)},
+        {"filename": "priority_signals", "title": "Priority Signals", "display": "table",
+         "columns": "priority, signal, scope, impact, confidence", "order_by": "signal_order",
+         "settings": {"column_settings": gap_format},
+         "description": "Compact signal index ordered deterministically by priority, impact, gap, and stable identity.",
+         "layout": (4, 0, 24, 7)},
+        {"filename": "recommended_investigations", "title": "Recommended Investigations",
+         "display": "table", "columns": "signal, scope, recommended_investigation",
+         "order_by": "signal_order",
+         "settings": {},
+         "description": "Readable investigation prompts for every active signal; these are not autonomous actions.",
+         "layout": (11, 0, 24, 10)},
+        {"filename": "business_leakage", "title": "Business Leakage Map", "display": "bar",
+         "columns": "category, leakage_stage, observed_count", "order_by": "stage_order",
+         "settings": {"graph.dimensions": ["leakage_stage"], "graph.metrics": ["observed_count"],
+                      "graph.show_values": True, "graph.legend_type": "none",
+                      "column_settings": count_format},
+         "description": "Measurement, identity, confirmation, and fulfillment differences retain separate semantics.",
+         "layout": (21, 0, 24, 9)},
+        {"filename": "campaign_diagnostics", "title": "Campaign Diagnostics", "display": "table",
+         "columns": "campaign_name, spend_usd, delivery_rate, peer_delivery_rate, return_rate, peer_return_rate, "
+                    "cost_per_delivered_order_usd, peer_cost_per_delivered_order_usd, "
+                    "delivery_benchmark_gap_orders, excess_returns_vs_peer, sample_band",
+         "settings": {"column_settings": {**money_format, **rate_format, **gap_format}},
+         "description": "Target campaigns only. Peer measures exclude the current campaign; gaps are benchmark estimates, not causal impact.",
+         "layout": (30, 0, 24, 11)},
+        {"filename": "time_anomalies", "title": "Time Anomalies", "display": "table",
+         "columns": "metric, severity, observed_value, baseline_value, confidence, explanation",
+         "settings": {},
+         "description": "Existing contextual anomaly engine output for the unified daily pilot series; no anomaly is manufactured.",
+         "layout": (41, 0, 24, 8)},
+        {"filename": "evidence_limitations", "title": "What Pulse Cannot Explain Yet",
+         "display": "table", "columns": "signal_type, scope, limitation", "settings": {},
+         "description": "Pulse identifies where evidence differs but does not infer missing causal dimensions.",
+         "layout": (49, 0, 24, 8)},
+        {"filename": "economic_safety", "title": "Economic Safety — FX_REQUIRED",
+         "display": "table", "columns": "economic_status, limitation", "settings": {},
+         "description": "Native collections and USD costs are not netted without trusted FX.",
+         "layout": (57, 0, 24, 6)},
+    )
+
+    managed_cards = []
+    collection_cards = [item for item in items if item.get("model") == "card"]
+    for spec in specs:
+        base = (Path(__file__).parent / "sama_intelligence_queries" /
+                f"{spec['filename']}.sql").read_text(encoding="utf-8").rstrip(";\n")
+        query_sql = (f"SELECT {spec['columns']} FROM (\n" + base
+                     + "\n) AS intelligence_card\nWHERE 1=1\n[[AND business_id = {{business}}]]")
+        if spec.get("order_by"):
+            query_sql += f"\nORDER BY {spec['order_by']}"
+        tags = {"business": {"id": "business", "name": "business", "display-name": "Business",
+                             "type": "text", "required": False}}
+        query = {"database": database_id, "type": "native",
+                 "native": {"query": query_sql, "template-tags": tags}}
+        result = api("POST", "/api/dataset", {**query, "parameters": []})
+        if result.get("status") != "completed":
+            detail = result.get("error", result.get("status"))
+            raise RuntimeError(f"SAMA intelligence BI query {spec['filename']} failed: {detail}")
+        payload = {"name": spec["title"], "description": spec["description"],
+                   "collection_id": collection_id, "display": spec["display"],
+                   "dataset_query": query, "visualization_settings": spec["settings"]}
+        existing = _unique(collection_cards, spec["title"])
+        card = (api("PUT", f"/api/card/{existing['id']}", payload)
+                if existing else api("POST", "/api/card", payload))
+        managed_cards.append((card, spec))
+
+    title = "Pulse — Intelligence"
+    dashboard = _unique([item for item in items if item.get("model") == "dashboard"], title)
+    description = (
+        "Deterministic, evidence-backed diagnostics for the real pilot; recommendations are "
+        "investigation prompts, never autonomous budget actions."
+    )
+    if dashboard is None:
+        dashboard = api("POST", "/api/dashboard", {
+            "name": title, "collection_id": collection_id, "description": description,
+        })
+    dashboard = api("GET", f"/api/dashboard/{dashboard['id']}")
+    managed_ids = {card["id"] for card, _ in managed_cards}
+    dashcards = [item for item in dashboard.get("dashcards", [])
+                 if item.get("card_id") not in managed_ids]
+    for index, (card, spec) in enumerate(managed_cards):
+        row, col, size_x, size_y = spec["layout"]
+        mappings = [{"parameter_id": "business", "card_id": card["id"],
+                     "target": ["variable", ["template-tag", "business"]]}]
+        dashcards.append({"id": -(1000 + index), "card_id": card["id"], "row": row,
+                          "col": col, "size_x": size_x, "size_y": size_y,
+                          "parameter_mappings": mappings, "visualization_settings": {}})
+    parameter = {"id": "business", "name": "Business", "slug": "business", "type": "string/="}
+    others = [item for item in dashboard.get("parameters", []) if item["id"] != "business"]
+    api("PUT", f"/api/dashboard/{dashboard['id']}", {
+        "name": title, "description": description,
+        "dashcards": dashcards, "parameters": [parameter, *others],
+    })
+    print(f"Intelligence dashboard ready: {METABASE_URL}/dashboard/{dashboard['id']}")
+
+
 def main() -> int:
     properties = _request("GET", "/api/session/properties")
     setup_token = properties.get("setup-token")
@@ -1323,6 +1494,7 @@ def main() -> int:
     _ensure_sama_pilot_dashboard(session_id, database_id)
     _ensure_sama_tiktok_dashboard(session_id, database_id)
     _ensure_sama_unified_dashboard(session_id, database_id)
+    _ensure_sama_intelligence_dashboard(session_id, database_id)
     if __package__:
         from .monitoring_dashboard import ensure_dashboard
     else:
