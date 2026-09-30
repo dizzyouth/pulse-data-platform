@@ -2704,3 +2704,29 @@ network call. The existing contextual anomaly engine now consumes the unified
 daily pilot series. `FX_REQUIRED`, PII protections, campaign-only downstream
 attribution, and the prohibition on autonomous budget changes remain in force.
 See [`docs/phase_6_6a_explainable_decision_intelligence.md`](docs/phase_6_6a_explainable_decision_intelligence.md).
+
+## Phase 6.6B — grounded AI analyst
+
+Pulse now provides single-turn conversational explanation over the unchanged
+Phase 6.6A deterministic evidence layer. Fixed parameterized warehouse reads
+build a bounded aggregate-only context with stable evidence IDs. The narration
+provider has no SQL or raw-data access, and every structured answer is locally
+validated for known evidence references, numeric provenance, causal limits,
+investigative-only guidance, PII exclusion, and `FX_REQUIRED` economics safety.
+Finding-level evidence references are authoritative provider output; Pulse
+derives the final top-level reference list as a stable ordered union.
+For live narration only, one bounded wording repair is permitted when the sole
+failure is unsupported causal wording. All other safety failures remain
+immediate, and every repaired answer passes the full validator again. Fallback
+eligibility is based only on the initial causal-only failure: if the single
+repair later fails for any reason, Pulse discards it completely and validates a
+local deterministic answer built from the same aggregate evidence context. The
+invalid repair cannot contribute facts or recommendations. This fallback adds
+no network call, so the maximum remains two.
+
+The deterministic offline provider is the default for CI and local use. An
+optional OpenAI Responses API adapter requires an explicit model, API key, and
+`--provider openai`; live acceptance has an additional environment guard. No
+autonomous actions, persistent memory, embeddings, vector database, or agent
+tool loop are introduced. See
+[`docs/phase_6_6b_grounded_ai_analyst.md`](docs/phase_6_6b_grounded_ai_analyst.md).
