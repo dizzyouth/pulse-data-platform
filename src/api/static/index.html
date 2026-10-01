@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Ask Pulse grounded business intelligence">
+  <title>Ask Pulse</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Pulse home">
+      <span class="brand-mark" aria-hidden="true">P</span>
+      <span><strong>Pulse</strong><small>Grounded Business Intelligence</small></span>
+    </a>
+    <span class="environment-pill">Local development</span>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="ask-heading">
+      <div class="hero-copy">
+        <p class="eyebrow">Evidence-backed answers</p>
+        <h1 id="ask-heading">Ask Pulse</h1>
+        <p>Explore aggregate business signals with citations, limitations, and safe next steps.</p>
+      </div>
+
+      <form id="ask-form" class="ask-form" novalidate>
+        <label for="question">Your business question</label>
+        <div class="query-row">
+          <input
+            id="question"
+            name="question"
+            type="text"
+            maxlength="1000"
+            autocomplete="off"
+            aria-label="Ask Pulse question"
+            placeholder="Why are returns high?"
+            required
+          >
+          <button id="ask-button" type="submit">
+            <span class="button-label">Ask Pulse</span>
+            <span class="button-loading" hidden>Analyzing...</span>
+          </button>
+        </div>
+        <p class="business-context">Business <strong id="business-id">sama_cod_pilot</strong></p>
+      </form>
+
+      <div class="suggestions" aria-label="Suggested questions">
+        <button type="button" data-question="What should I investigate first?">Investigate first</button>
+        <button type="button" data-question="Why are returns high?">Returns</button>
+        <button type="button" data-question="Should I pause Sama-NewUM?">Campaign decision</button>
+        <button type="button" data-question="How much profit am I making?">Profit</button>
+        <button type="button" data-question="Did something abnormal happen today?">Anomaly today</button>
+      </div>
+    </section>
+
+    <section id="status-panel" class="status-panel" hidden aria-live="polite"></section>
+
+    <section id="error-panel" class="error-panel" hidden role="alert">
+      <h2>Pulse couldn't answer safely</h2>
+      <p id="error-message"></p>
+      <button id="retry-button" type="button">Try again</button>
+    </section>
+
+    <article id="answer-panel" class="answer-panel" hidden aria-live="polite">
+      <section class="summary-card">
+        <div class="summary-heading">
+          <p class="eyebrow">Grounded answer</p>
+          <div class="badges">
+            <span id="confidence-badge" class="badge"></span>
+            <span id="partial-badge" class="badge badge-caution" hidden>Limited by current evidence</span>
+          </div>
+        </div>
+        <h2 id="answer-summary"></h2>
+      </section>
+
+      <div class="answer-grid">
+        <section class="content-card" aria-labelledby="findings-heading">
+          <h2 id="findings-heading">Findings</h2>
+          <div id="findings-list" class="findings-list"></div>
+        </section>
+
+        <aside class="side-stack">
+          <section class="content-card" aria-labelledby="investigate-heading">
+            <h2 id="investigate-heading">Investigate</h2>
+            <ol id="investigation-list"></ol>
+          </section>
+
+          <section class="content-card" aria-labelledby="evidence-heading">
+            <h2 id="evidence-heading">Evidence</h2>
+            <div id="evidence-list" class="evidence-list"></div>
+          </section>
+        </aside>
+      </div>
+
+      <section class="content-card limitations-card" aria-labelledby="limitations-heading">
+        <h2 id="limitations-heading">Limitations</h2>
+        <ul id="limitations-list"></ul>
+      </section>
+
+      <section id="safety-card" class="safety-card" hidden aria-labelledby="safety-heading">
+        <h2 id="safety-heading">Safety notes</h2>
+        <ul id="safety-list"></ul>
+      </section>
+
+      <details class="metadata-card">
+        <summary>Execution metadata</summary>
+        <dl id="metadata-list"></dl>
+      </details>
+    </article>
+  </main>
+
+  <footer>
+    <p>Aggregate evidence only | No autonomous actions | No persistent conversation memory</p>
+  </footer>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

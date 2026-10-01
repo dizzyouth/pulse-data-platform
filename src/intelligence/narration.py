@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Iterable
 
@@ -78,6 +79,23 @@ class SafetyValidationError(AnswerValidationError):
         if not self.codes:
             raise ValueError("SafetyValidationError requires at least one code")
         super().__init__(message)
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerExecutionMetadata:
+    """Safe execution facts suitable for presentation surfaces."""
+
+    provider_call_count: int
+    repair_attempted: bool
+    deterministic_fallback_used: bool
+    fallback_intent: str | None
+    latency_ms: float
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerExecutionResult:
+    answer: AnalystAnswer
+    metadata: AnswerExecutionMetadata
 
 
 _NUMBER = re.compile(r"(?<![A-Za-z0-9_])\$?(\d+(?:,\d{3})*(?:\.\d+)?)(%?)")
@@ -321,9 +339,9 @@ def question_category(question: str) -> str:
     return "PRIORITIZATION"
 
 
-def answer_question(
+def answer_question_with_metadata(
     question: str, context: IntelligenceContext, provider: NarrationProvider
-) -> AnalystAnswer:
+) -> AnswerExecutionResult:
     if not isinstance(question, str) or not question.strip():
         raise AnswerValidationError("question must be non-empty text")
     if _EMAIL.search(question) or _PHONE.search(question) or _PII_TERMS.search(question):
@@ -345,17 +363,32 @@ def answer_question(
     fallback_validation_result = "NOT_ATTEMPTED"
     provider_call_count = 0
 
-    def validated_deterministic_fallback() -> AnalystAnswer:
+    def completed(answer: AnalystAnswer) -> AnswerExecutionResult:
+        nonlocal success
+        success = True
+        return AnswerExecutionResult(
+            answer=answer,
+            metadata=AnswerExecutionMetadata(
+                provider_call_count=provider_call_count,
+                repair_attempted=repair_attempted,
+                deterministic_fallback_used=deterministic_fallback_used,
+                fallback_intent=(
+                    None if fallback_intent == "NONE" else fallback_intent
+                ),
+                latency_ms=(time.perf_counter() - started) * 1000,
+            ),
+        )
+
+    def validated_deterministic_fallback() -> AnswerExecutionResult:
         nonlocal deterministic_fallback_used, fallback_intent
-        nonlocal fallback_validation_result, success
+        nonlocal fallback_validation_result
         deterministic_fallback_used = True
         fallback_intent = classify_question_intent(question.strip()).value
         try:
             fallback = build_deterministic_answer(question.strip(), context)
             fallback = validate_answer(fallback, question.strip(), context)
             fallback_validation_result = "PASSED"
-            success = True
-            return fallback
+            return completed(fallback)
         except SafetyValidationError as fallback_error:
             fallback_validation_result = (
                 "FAILED:" + ",".join(fallback_error.codes)
@@ -371,8 +404,7 @@ def answer_question(
         try:
             answer = validate_answer(answer, question.strip(), context)
             initial_validation_result = "PASSED"
-            success = True
-            return answer
+            return completed(answer)
         except SafetyValidationError as initial_error:
             initial_validation_codes = ",".join(initial_error.codes)
             initial_validation_result = "FAILED:" + ",".join(initial_error.codes)
@@ -395,8 +427,7 @@ def answer_question(
                 repaired = validate_answer(repaired, question.strip(), context)
                 repair_validation_codes = "NONE"
                 repaired_validation_result = "PASSED"
-                success = True
-                return repaired
+                return completed(repaired)
             except SafetyValidationError as repaired_error:
                 repair_validation_codes = ",".join(repaired_error.codes)
                 repaired_validation_result = "FAILED:" + ",".join(repaired_error.codes)
@@ -431,6 +462,13 @@ def answer_question(
             repair_discarded, provider_call_count, deterministic_fallback_used,
             fallback_intent, fallback_validation_result, success,
         )
+
+
+def answer_question(
+    question: str, context: IntelligenceContext, provider: NarrationProvider
+) -> AnalystAnswer:
+    """Return the validated answer for existing CLI and library callers."""
+    return answer_question_with_metadata(question, context, provider).answer
 
 
 def render_answer_markdown(answer: AnalystAnswer) -> str:

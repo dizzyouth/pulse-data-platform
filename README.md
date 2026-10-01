@@ -2730,3 +2730,32 @@ optional OpenAI Responses API adapter requires an explicit model, API key, and
 autonomous actions, persistent memory, embeddings, vector database, or agent
 tool loop are introduced. See
 [`docs/phase_6_6b_grounded_ai_analyst.md`](docs/phase_6_6b_grounded_ai_analyst.md).
+
+## Phase 6.6C - Pulse Analyst API and Ask Pulse
+
+Pulse now exposes the validated Phase 6.6B analyst through a small FastAPI
+service and a same-origin, framework-free Ask Pulse page. The HTTP and CLI
+surfaces share the same bounded `IntelligenceContext`, provider selection,
+structured answer validation, optional single repair, and deterministic
+fallback. No business metric, evidence rule, or safety rule is reimplemented
+in the API.
+
+Install the declared Python dependencies, ensure the local warehouse is
+available, and start the default offline provider on localhost:
+
+```powershell
+pip install -r requirements.txt
+$env:PULSE_LLM_PROVIDER = "fake"
+python -m src.api.app
+```
+
+Open `http://127.0.0.1:8088/`. The health, capabilities, and ask endpoints are
+under `/api/v1`. Provider and model selection remain server-side; browser
+requests contain only `business_id` and `question`. The page stores no chat
+history, and health checks never call a narration provider.
+
+**LOCAL DEVELOPMENT ONLY.** This phase has no authentication and should not be
+exposed publicly without authentication, TLS, authorization, rate limiting,
+and deployment hardening. See
+[`docs/phase_6_6c_analyst_api.md`](docs/phase_6_6c_analyst_api.md) for contracts,
+privacy boundaries, configuration, and limitations.

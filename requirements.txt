@@ -2,6 +2,9 @@ confluent-kafka==2.15.0
 pyspark==4.2.0
 psycopg[binary]==3.2.9
 openai>=3.19.2,<4.0.0
+fastapi>=0.141.1,<0.142.0
+uvicorn>=0.53.0,<0.54.0
+httpx>=0.28.1,<0.29.0
 dbt-core==1.9.8
 dbt-postgres==1.9.1
 # Keep the shared Airflow/dbt image compatible with grpcio-status.
