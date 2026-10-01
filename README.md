@@ -2759,3 +2759,27 @@ exposed publicly without authentication, TLS, authorization, rate limiting,
 and deployment hardening. See
 [`docs/phase_6_6c_analyst_api.md`](docs/phase_6_6c_analyst_api.md) for contracts,
 privacy boundaries, configuration, and limitations.
+
+## Phase 6.7A - cross-domain opportunities
+
+Pulse now evaluates deterministic investigation opportunities directly from
+the existing bounded `IntelligenceContext`. Four explicit rules combine
+validated campaign, fulfillment, confirmation, measurement, anomaly, and
+economics evidence without an LLM, hidden score, forecast, causal inference,
+or autonomous action. Each immutable opportunity contains an untested
+hypothesis, supporting/counter/blocking evidence, confirmation and refutation
+criteria, a future decision that better evidence could unlock, and a strict
+non-causal limitation. Suppressed candidates retain concise deterministic
+reason codes for offline debugging.
+
+Run the aggregate-only local CLI with:
+
+```powershell
+python -m src.intelligence.opportunity_cli list --business-id sama_cod_pilot
+python -m src.intelligence.opportunity_cli list --business-id sama_cod_pilot --format json --show-suppressed
+```
+
+`FX_REQUIRED` still prohibits cross-currency profit, contribution, margin,
+MER, ROAS, revenue-upside, or recovered-revenue claims. Phase 6.6C Ask Pulse is
+not integrated with opportunity cards yet. See
+[`docs/phase_6_7a_cross_domain_opportunities.md`](docs/phase_6_7a_cross_domain_opportunities.md).
