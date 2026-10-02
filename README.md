@@ -2780,6 +2780,16 @@ python -m src.intelligence.opportunity_cli list --business-id sama_cod_pilot --f
 ```
 
 `FX_REQUIRED` still prohibits cross-currency profit, contribution, margin,
-MER, ROAS, revenue-upside, or recovered-revenue claims. Phase 6.6C Ask Pulse is
-not integrated with opportunity cards yet. See
+MER, ROAS, revenue-upside, or recovered-revenue claims. See
 [`docs/phase_6_7a_cross_domain_opportunities.md`](docs/phase_6_7a_cross_domain_opportunities.md).
+
+## Phase 6.7B - Opportunity API and Ask Pulse integration
+
+Ask Pulse now exposes active 6.7A opportunities through list and detail APIs,
+renders them as ordered expandable cards, and answers opportunity-specific
+questions through a deterministic provider-free path. Opportunity IDs select
+validated active product objects; the underlying warehouse evidence IDs still
+ground every answer finding. Suppressed candidates remain available only on the
+6.7A developer CLI. General Ask Pulse requests continue through the existing
+6.6C provider, validation, repair, and fallback flow unchanged. See
+[`docs/phase_6_7b_opportunity_product.md`](docs/phase_6_7b_opportunity_product.md).

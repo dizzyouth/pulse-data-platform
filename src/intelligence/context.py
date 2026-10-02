@@ -215,7 +215,12 @@ class PostgresEvidenceRepository:
         return rows[0] if rows else None
 
     def _many(self, query: str, params: tuple[Any, ...]) -> list[Mapping[str, Any]]:
-        with self._connect(**connection_kwargs(), row_factory=dict_row) as connection:
+        settings = dict(connection_kwargs())
+        if str(settings.get("host", "")).strip().lower() == "localhost":
+            # The local Docker port is IPv4. Supplying hostaddr prevents libpq
+            # from waiting on an unreachable ::1 before trying 127.0.0.1.
+            settings["hostaddr"] = "127.0.0.1"
+        with self._connect(**settings, row_factory=dict_row) as connection:
             connection.read_only = True
             return list(connection.execute(query, params).fetchall())
 

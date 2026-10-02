@@ -119,7 +119,7 @@ class AnalystApiTests(unittest.TestCase):
             {
                 "status": "ok",
                 "service": "pulse-analyst",
-                "version": "6.6C",
+                "version": "6.7B",
                 "warehouse": "reachable",
                 "provider": "fake",
                 "provider_configured": True,
@@ -185,6 +185,7 @@ class AnalystApiTests(unittest.TestCase):
                 self.assertEqual(payload["meta"]["provider_call_count"], 1)
                 self.assertFalse(payload["meta"]["repair_attempted"])
                 self.assertFalse(payload["meta"]["deterministic_fallback_used"])
+                self.assertEqual(payload["meta"]["answer_source"], "grounded_analyst")
 
     def test_required_product_safety_behaviors_are_preserved(self) -> None:
         client = self.client()
@@ -481,12 +482,13 @@ class AnalystUiTests(unittest.TestCase):
         for question in QUESTIONS:
             self.assertIn(question, response.text)
 
-    def test_browser_posts_only_business_id_and_question(self) -> None:
+    def test_browser_keeps_ordinary_ask_to_business_and_question(self) -> None:
         normalized = " ".join(self.javascript.split())
         self.assertIn(
-            "body: JSON.stringify({ business_id: BUSINESS_ID, question: trimmed })",
+            "const requestBody = { business_id: BUSINESS_ID, question: trimmed }",
             normalized,
         )
+        self.assertIn("if (opportunityId) requestBody.opportunity_id = opportunityId", normalized)
         for forbidden in (
             "OPENAI_API_KEY", "Authorization", "system_prompt", "raw_context",
             "evidence_ids:", "localStorage", "sessionStorage",
@@ -498,6 +500,7 @@ class AnalystUiTests(unittest.TestCase):
             "answer_summary", "findings", "evidence_refs", "investigation_steps",
             "limitations", "safety_notes", "provider", "model",
             "deterministic_fallback_used", "latency_ms",
+            "answer_source",
         ):
             self.assertIn(expected, self.javascript)
         for section_id in (

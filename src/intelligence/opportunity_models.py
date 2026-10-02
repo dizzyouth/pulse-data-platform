@@ -61,6 +61,11 @@ class SuppressionReason(StrEnum):
 _OPPORTUNITY_ID = re.compile(r"^opportunity:[a-z0-9_-]+:[a-z0-9_-]+$")
 
 
+def valid_opportunity_id_shape(value: str) -> bool:
+    """Return whether *value* has the bounded engine-owned stable ID shape."""
+    return isinstance(value, str) and bool(_OPPORTUNITY_ID.fullmatch(value))
+
+
 def _text(value: str, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise OpportunityValidationError(f"{field} must be non-empty text")

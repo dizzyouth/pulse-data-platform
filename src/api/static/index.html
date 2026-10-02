@@ -54,6 +54,19 @@
       </div>
     </section>
 
+    <section id="opportunities-section" class="opportunities-section" aria-labelledby="opportunities-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Deterministic investigations</p>
+          <h2 id="opportunities-heading">Opportunities</h2>
+          <p id="opportunities-subtitle">Loading active opportunities...</p>
+        </div>
+        <div id="opportunity-counts" class="opportunity-counts" aria-label="Opportunity priority counts"></div>
+      </div>
+      <div id="opportunities-status" class="opportunities-status" aria-live="polite"></div>
+      <div id="opportunity-cards" class="opportunity-cards"></div>
+    </section>
+
     <section id="status-panel" class="status-panel" hidden aria-live="polite"></section>
 
     <section id="error-panel" class="error-panel" hidden role="alert">
@@ -63,6 +76,7 @@
     </section>
 
     <article id="answer-panel" class="answer-panel" hidden aria-live="polite">
+      <p id="answer-opportunity-context" class="answer-opportunity-context" hidden></p>
       <section class="summary-card">
         <div class="summary-heading">
           <p class="eyebrow">Grounded answer</p>

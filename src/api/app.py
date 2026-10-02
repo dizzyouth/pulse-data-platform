@@ -1,4 +1,4 @@
-"""FastAPI application for the local Phase 6.6C Ask Pulse product surface."""
+"""FastAPI application for the local Phase 6.7B Ask Pulse product surface."""
 
 from __future__ import annotations
 
@@ -23,6 +23,9 @@ from src.api.models import (
     ExecutionMetaResponse,
     FindingResponse,
     HealthResponse,
+    OpportunityDetailResponse,
+    OpportunityListResponse,
+    OpportunityResponse,
 )
 from src.api.safety import valid_business_id
 from src.api.service import (
@@ -32,10 +35,45 @@ from src.api.service import (
     AnalystService,
     AnalystServiceError,
 )
+from src.intelligence.opportunity_models import (
+    InvestigationOpportunity,
+    valid_opportunity_id_shape,
+)
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 LOGGER = logging.getLogger("pulse.api")
+
+
+def _opportunity_response(
+    opportunity: InvestigationOpportunity,
+) -> OpportunityResponse:
+    return OpportunityResponse(
+        opportunity_order=opportunity.opportunity_order,
+        opportunity_id=opportunity.opportunity_id,
+        scope_type=opportunity.scope_type.value,
+        scope_name=opportunity.scope_name,
+        opportunity_type=opportunity.opportunity_type.value,
+        category=opportunity.category.value,
+        title=opportunity.title,
+        observation_summary=opportunity.observation_summary,
+        hypothesis_to_test=opportunity.hypothesis_to_test,
+        hypothesis_status=opportunity.hypothesis_status.value,
+        priority=opportunity.priority.value,
+        confidence=opportunity.confidence.value,
+        impact_proxy_name=opportunity.impact_proxy_name,
+        impact_proxy_value=opportunity.impact_proxy_value,
+        impact_proxy_unit=opportunity.impact_proxy_unit,
+        supporting_evidence_refs=list(opportunity.supporting_evidence_refs),
+        counter_evidence_refs=list(opportunity.counter_evidence_refs),
+        blocking_evidence_refs=list(opportunity.blocking_evidence_refs),
+        investigation_steps=list(opportunity.investigation_steps),
+        confirmation_criteria=list(opportunity.confirmation_criteria),
+        refutation_criteria=list(opportunity.refutation_criteria),
+        decision_unlocked=opportunity.decision_unlocked,
+        missing_evidence=list(opportunity.missing_evidence),
+        limitation=opportunity.limitation,
+    )
 
 
 def _request_id(request: Request) -> str:
@@ -63,7 +101,7 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
     analyst = service or AnalystService()
     application = FastAPI(
         title="Pulse Analyst API",
-        version="6.6C",
+        version="6.7B",
         debug=False,
         description="Local development API for grounded aggregate business intelligence.",
     )
@@ -131,7 +169,7 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
         return HealthResponse(
             status="ok" if warehouse == "reachable" else "degraded",
             service="pulse-analyst",
-            version="6.6C",
+            version="6.7B",
             warehouse=warehouse,
             provider=provider,
             provider_configured=configured,
@@ -148,12 +186,74 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             limitations=list(LIMITATIONS),
         )
 
+    @application.get(
+        "/api/v1/analyst/opportunities",
+        response_model=OpportunityListResponse,
+    )
+    async def list_opportunities(
+        request: Request, business_id: str
+    ) -> OpportunityListResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        evaluation = analyst.list_opportunities(business_id)
+        response = OpportunityListResponse(
+            business_id=evaluation.business_id,
+            as_of_date=evaluation.as_of_date,
+            count=len(evaluation.opportunities),
+            opportunities=[
+                _opportunity_response(item) for item in evaluation.opportunities
+            ],
+        )
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s answer_source=%s "
+            "opportunity_count=%d success=true",
+            _request_id(request),
+            business_id,
+            "deterministic_opportunity",
+            response.count,
+        )
+        return response
+
+    @application.get(
+        "/api/v1/analyst/opportunities/{opportunity_id}",
+        response_model=OpportunityDetailResponse,
+    )
+    async def get_opportunity(
+        request: Request, opportunity_id: str, business_id: str
+    ) -> OpportunityDetailResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        if len(opportunity_id) <= 200 and valid_opportunity_id_shape(opportunity_id):
+            request.state.opportunity_id = opportunity_id
+        opportunity = analyst.get_opportunity(business_id, opportunity_id)
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s opportunity_id=%s "
+            "opportunity_type=%s answer_source=%s success=true",
+            _request_id(request),
+            business_id,
+            opportunity.opportunity_id,
+            opportunity.opportunity_type.value,
+            "deterministic_opportunity",
+        )
+        return OpportunityDetailResponse(
+            business_id=opportunity.business_id,
+            as_of_date=opportunity.as_of_date,
+            opportunity=_opportunity_response(opportunity),
+        )
+
     @application.post("/api/v1/analyst/ask", response_model=AskResponse)
     async def ask(request: Request, payload: AskRequest) -> AskResponse:
         request_id = _request_id(request)
         if valid_business_id(payload.business_id):
             request.state.business_id = payload.business_id
-        result = analyst.ask(payload.business_id, payload.question)
+        if (
+            payload.opportunity_id is not None
+            and valid_opportunity_id_shape(payload.opportunity_id)
+        ):
+            request.state.opportunity_id = payload.opportunity_id
+        result = analyst.ask(
+            payload.business_id, payload.question, payload.opportunity_id
+        )
         answer = result.answer
         response = AskResponse(
             request_id=request_id,
@@ -188,17 +288,22 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
                     result.execution.deterministic_fallback_used
                 ),
                 fallback_intent=result.execution.fallback_intent,
+                answer_source=result.answer_source,
                 latency_ms=round(result.execution.latency_ms, 2),
             ),
         )
         LOGGER.info(
             "analyst_api request_id=%s business_id=%s question_category=%s "
+            "opportunity_id=%s opportunity_type=%s answer_source=%s "
             "provider=%s model=%s evidence_count=%d latency_ms=%.2f "
             "provider_call_count=%d repair_attempted=%s "
             "deterministic_fallback_used=%s success=true",
             request_id,
             payload.business_id,
             result.question_category,
+            getattr(request.state, "opportunity_id", "NONE"),
+            result.opportunity_type or "NONE",
+            result.answer_source,
             result.provider,
             result.model,
             result.evidence_count,
