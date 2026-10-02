@@ -2793,3 +2793,14 @@ ground every answer finding. Suppressed candidates remain available only on the
 6.7A developer CLI. General Ask Pulse requests continue through the existing
 6.6C provider, validation, repair, and fallback flow unchanged. See
 [`docs/phase_6_7b_opportunity_product.md`](docs/phase_6_7b_opportunity_product.md).
+
+## Phase 6.7C - evidence gaps and investigation planning
+
+Pulse now converts active opportunities into deterministic, aggregate-only
+investigation plans. Explicit task and evidence-requirement registries identify
+what can be checked now, what is unavailable in the current validated context,
+and which missing requirements are shared across opportunities. Stable plans,
+readiness states, hypothesis links, and recommended starts are available from a
+standalone offline CLI; suppressed opportunities receive no plan. This phase
+adds no autonomous execution or API/UI integration. See
+[`docs/phase_6_7c_investigation_planning.md`](docs/phase_6_7c_investigation_planning.md).
