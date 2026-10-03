@@ -2804,3 +2804,14 @@ readiness states, hypothesis links, and recommended starts are available from a
 standalone offline CLI; suppressed opportunities receive no plan. This phase
 adds no autonomous execution or API/UI integration. See
 [`docs/phase_6_7c_investigation_planning.md`](docs/phase_6_7c_investigation_planning.md).
+
+## Phase 6.7D - investigation API and Ask Pulse integration
+
+The validated 6.7C portfolio is now available through aggregate portfolio,
+plan-detail, and task-detail endpoints and is rendered inside the existing
+Ask Pulse Opportunities section. Investigation-task questions use a separate
+deterministic, provider-free answer mode grounded in current context evidence;
+ordinary and opportunity Ask behavior remains unchanged. The browser loads one
+portfolio, displays engine-owned readiness and recommended-start state, and
+persists no task state. See
+[`docs/phase_6_7d_investigation_product.md`](docs/phase_6_7d_investigation_product.md).

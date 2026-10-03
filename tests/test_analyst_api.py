@@ -119,7 +119,7 @@ class AnalystApiTests(unittest.TestCase):
             {
                 "status": "ok",
                 "service": "pulse-analyst",
-                "version": "6.7B",
+                "version": "6.7D",
                 "warehouse": "reachable",
                 "provider": "fake",
                 "provider_configured": True,

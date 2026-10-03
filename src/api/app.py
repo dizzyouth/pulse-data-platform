@@ -1,4 +1,4 @@
-"""FastAPI application for the local Phase 6.7B Ask Pulse product surface."""
+"""FastAPI application for the local Phase 6.7D Ask Pulse product surface."""
 
 from __future__ import annotations
 
@@ -23,6 +23,11 @@ from src.api.models import (
     ExecutionMetaResponse,
     FindingResponse,
     HealthResponse,
+    InvestigationPlanDetailResponse,
+    InvestigationPlanResponse,
+    InvestigationPortfolioResponse,
+    InvestigationTaskDetailResponse,
+    InvestigationTaskResponse,
     OpportunityDetailResponse,
     OpportunityListResponse,
     OpportunityResponse,
@@ -38,6 +43,13 @@ from src.api.service import (
 from src.intelligence.opportunity_models import (
     InvestigationOpportunity,
     valid_opportunity_id_shape,
+)
+from src.intelligence.investigation_models import (
+    InvestigationPlan,
+    InvestigationPortfolio,
+    InvestigationTask,
+    valid_plan_id_shape,
+    valid_task_id_shape,
 )
 
 
@@ -76,6 +88,24 @@ def _opportunity_response(
     )
 
 
+def _investigation_plan_response(
+    plan: InvestigationPlan,
+) -> InvestigationPlanResponse:
+    return InvestigationPlanResponse.model_validate(plan.to_dict())
+
+
+def _investigation_task_response(
+    task: InvestigationTask,
+) -> InvestigationTaskResponse:
+    return InvestigationTaskResponse.model_validate(task.to_dict())
+
+
+def _investigation_portfolio_response(
+    portfolio: InvestigationPortfolio,
+) -> InvestigationPortfolioResponse:
+    return InvestigationPortfolioResponse.model_validate(portfolio.to_dict())
+
+
 def _request_id(request: Request) -> str:
     current = getattr(request.state, "request_id", None)
     if current is None:
@@ -101,7 +131,7 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
     analyst = service or AnalystService()
     application = FastAPI(
         title="Pulse Analyst API",
-        version="6.7B",
+        version="6.7D",
         debug=False,
         description="Local development API for grounded aggregate business intelligence.",
     )
@@ -169,7 +199,7 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
         return HealthResponse(
             status="ok" if warehouse == "reachable" else "degraded",
             service="pulse-analyst",
-            version="6.7B",
+            version="6.7D",
             warehouse=warehouse,
             provider=provider,
             provider_configured=configured,
@@ -241,6 +271,86 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             opportunity=_opportunity_response(opportunity),
         )
 
+    @application.get(
+        "/api/v1/analyst/investigations",
+        response_model=InvestigationPortfolioResponse,
+    )
+    async def list_investigations(
+        request: Request, business_id: str
+    ) -> InvestigationPortfolioResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        portfolio = analyst.list_investigations(business_id)
+        response = _investigation_portfolio_response(portfolio)
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s answer_source=%s "
+            "plan_count=%d ready_task_count=%d partial_task_count=%d "
+            "blocked_task_count=%d success=true",
+            _request_id(request),
+            business_id,
+            "deterministic_investigation",
+            len(response.plans),
+            response.ready_task_count,
+            response.partial_task_count,
+            response.blocked_task_count,
+        )
+        return response
+
+    @application.get(
+        "/api/v1/analyst/investigations/{plan_id}",
+        response_model=InvestigationPlanDetailResponse,
+    )
+    async def get_investigation_plan(
+        request: Request, plan_id: str, business_id: str
+    ) -> InvestigationPlanDetailResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        if len(plan_id) <= 240 and valid_plan_id_shape(plan_id):
+            request.state.plan_id = plan_id
+        plan = analyst.get_investigation_plan(business_id, plan_id)
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s plan_id=%s "
+            "answer_source=%s success=true",
+            _request_id(request),
+            business_id,
+            plan.plan_id,
+            "deterministic_investigation",
+        )
+        return InvestigationPlanDetailResponse(
+            business_id=plan.business_id,
+            as_of_date=plan.as_of_date,
+            plan=_investigation_plan_response(plan),
+        )
+
+    @application.get(
+        "/api/v1/analyst/investigation-tasks/{task_id}",
+        response_model=InvestigationTaskDetailResponse,
+    )
+    async def get_investigation_task(
+        request: Request, task_id: str, business_id: str
+    ) -> InvestigationTaskDetailResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        if len(task_id) <= 300 and valid_task_id_shape(task_id):
+            request.state.task_id = task_id
+        plan, task = analyst.get_investigation_task(business_id, task_id)
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s plan_id=%s task_id=%s "
+            "task_readiness=%s answer_source=%s success=true",
+            _request_id(request),
+            business_id,
+            plan.plan_id,
+            task.task_id,
+            task.readiness.value,
+            "deterministic_investigation",
+        )
+        return InvestigationTaskDetailResponse(
+            business_id=plan.business_id,
+            as_of_date=plan.as_of_date,
+            plan_id=plan.plan_id,
+            task=_investigation_task_response(task),
+        )
+
     @application.post("/api/v1/analyst/ask", response_model=AskResponse)
     async def ask(request: Request, payload: AskRequest) -> AskResponse:
         request_id = _request_id(request)
@@ -251,8 +361,16 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             and valid_opportunity_id_shape(payload.opportunity_id)
         ):
             request.state.opportunity_id = payload.opportunity_id
+        if (
+            payload.investigation_task_id is not None
+            and valid_task_id_shape(payload.investigation_task_id)
+        ):
+            request.state.task_id = payload.investigation_task_id
         result = analyst.ask(
-            payload.business_id, payload.question, payload.opportunity_id
+            payload.business_id,
+            payload.question,
+            payload.opportunity_id,
+            payload.investigation_task_id,
         )
         answer = result.answer
         response = AskResponse(
@@ -294,7 +412,8 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
         )
         LOGGER.info(
             "analyst_api request_id=%s business_id=%s question_category=%s "
-            "opportunity_id=%s opportunity_type=%s answer_source=%s "
+            "opportunity_id=%s opportunity_type=%s plan_id=%s task_id=%s "
+            "task_readiness=%s answer_source=%s "
             "provider=%s model=%s evidence_count=%d latency_ms=%.2f "
             "provider_call_count=%d repair_attempted=%s "
             "deterministic_fallback_used=%s success=true",
@@ -303,6 +422,9 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             result.question_category,
             getattr(request.state, "opportunity_id", "NONE"),
             result.opportunity_type or "NONE",
+            result.investigation_plan_id or "NONE",
+            result.investigation_task_id or "NONE",
+            result.investigation_readiness or "NONE",
             result.answer_source,
             result.provider,
             result.model,

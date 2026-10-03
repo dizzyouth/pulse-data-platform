@@ -183,6 +183,18 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
 .section-heading p:last-child { margin: 0.55rem 0 0; color: var(--muted); }
 .opportunity-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.45rem; }
 .opportunities-status { margin-top: 1rem; color: var(--muted); }
+.investigation-portfolio { margin-top: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: var(--card); box-shadow: 0 10px 28px rgba(29, 55, 39, 0.05); padding: 1.1rem 1.2rem; }
+.investigation-portfolio-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
+.investigation-portfolio-heading h3 { margin: 0; font-size: 1rem; }
+.investigation-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; }
+.recommended-investigation { margin: 1rem 0; color: var(--green-dark); font-weight: 750; }
+.evidence-gaps { border-top: 1px solid var(--line); padding-top: 0.8rem; }
+.evidence-gaps > summary { cursor: pointer; font-size: 0.82rem; font-weight: 750; }
+.evidence-gap-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 0.65rem; margin-top: 0.8rem; }
+.evidence-gap-item { min-width: 0; border-radius: 0.75rem; background: #f8faf7; overflow-wrap: anywhere; padding: 0.8rem; }
+.evidence-gap-item h4, .evidence-gap-item p { margin: 0; }
+.evidence-gap-item h4 { font-size: 0.8rem; }
+.evidence-gap-item p { margin-top: 0.4rem; font-size: 0.76rem; line-height: 1.45; }
 .opportunity-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; align-items: start; margin-top: 1rem; }
 .opportunity-card { min-width: 0; border: 1px solid var(--line); border-radius: 1.2rem; background: var(--card); box-shadow: 0 10px 28px rgba(29, 55, 39, 0.05); padding: 1.25rem; overflow-wrap: anywhere; }
 .opportunity-card-header { display: flex; justify-content: space-between; gap: 0.75rem; align-items: start; }
@@ -192,6 +204,12 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
 .opportunity-scope { margin: 0; color: var(--muted); font-size: 0.78rem; text-transform: capitalize; }
 .opportunity-observation { margin: 1rem 0 0; line-height: 1.55; }
 .impact-proxy { margin: 0.85rem 0 0; border-radius: 0.65rem; background: #f3f7f2; color: var(--green-dark); font-size: 0.78rem; padding: 0.65rem; }
+.plan-summary { margin-top: 1rem; border: 1px solid var(--line); border-radius: 0.8rem; background: #f8faf7; padding: 0.8rem; }
+.plan-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.plan-summary h4, .plan-summary p { margin: 0; }
+.plan-summary h4 { font-size: 0.8rem; }
+.plan-task-counts { margin-top: 0.55rem !important; color: #435047; font-size: 0.76rem; }
+.plan-recommended { margin-top: 0.45rem !important; color: var(--green-dark); font-size: 0.76rem; font-weight: 700; }
 .priority-high { background: var(--red-soft); color: var(--red); }
 .priority-medium { background: var(--amber-soft); color: var(--amber); }
 .priority-low { background: #eef2ed; color: #526358; }
@@ -199,7 +217,7 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
 .opportunity-action { border: 1px solid #b9cabc; border-radius: 999px; background: white; color: var(--green-dark); font-size: 0.76rem; font-weight: 700; padding: 0.48rem 0.7rem; }
 .opportunity-action:hover { border-color: var(--green); background: var(--green-soft); }
 .opportunity-details { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.9rem; }
-.opportunity-details > summary, .opportunity-evidence > summary { cursor: pointer; font-size: 0.82rem; font-weight: 750; }
+.opportunity-details > summary, .opportunity-evidence > summary, .investigation-task > summary { cursor: pointer; font-size: 0.82rem; font-weight: 750; }
 .opportunity-details-content { margin-top: 1rem; }
 .opportunity-detail-section { margin-top: 1rem; }
 .opportunity-detail-section:first-child { margin-top: 0; }
@@ -210,6 +228,18 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
 .opportunity-evidence-group { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.65rem; }
 .opportunity-evidence-group strong { width: 100%; font-size: 0.72rem; }
 .muted-copy { color: var(--muted); font-size: 0.78rem; }
+.readiness-ready_now, .plan-ready { background: var(--green-soft); color: var(--green-dark); }
+.readiness-partially_ready, .plan-partial { background: var(--amber-soft); color: var(--amber); }
+.readiness-blocked_missing_evidence, .readiness-blocked_boundary, .plan-blocked { background: #eef2ed; color: #526358; }
+.investigation-plan-details { border-top: 1px solid var(--line); padding-top: 1rem; }
+.investigation-task { margin-top: 0.65rem; border: 1px solid var(--line); border-radius: 0.7rem; background: #fbfcfa; padding: 0.7rem; }
+.investigation-task > summary { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; list-style-position: outside; }
+.investigation-task .badge { flex-shrink: 0; font-size: 0.64rem; }
+.task-summary-copy, .task-title, .task-objective { display: block; min-width: 0; overflow-wrap: anywhere; }
+.task-title { color: var(--ink); }
+.task-objective { margin-top: 0.3rem; color: #536158; font-size: 0.72rem; font-weight: 500; line-height: 1.4; }
+.investigation-task-body { margin-top: 0.8rem; }
+.task-actions { margin-top: 0.7rem; }
 
 @media (max-width: 760px) {
   .environment-pill { display: none; }
@@ -217,6 +247,8 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
   .query-row button { min-height: 3.1rem; }
   .summary-heading { display: block; }
   .section-heading { display: block; }
+  .investigation-portfolio-heading { display: block; }
+  .investigation-counts { justify-content: flex-start; margin-top: 0.8rem; }
   .opportunity-counts { justify-content: flex-start; margin-top: 0.8rem; }
   .badges { justify-content: flex-start; margin-top: 0.7rem; }
   .metadata-card dl { grid-template-columns: 1fr; gap: 0.2rem; }

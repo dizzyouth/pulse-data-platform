@@ -3,6 +3,7 @@
 const BUSINESS_ID = "sama_cod_pilot";
 const ASK_ENDPOINT = "/api/v1/analyst/ask";
 const OPPORTUNITIES_ENDPOINT = "/api/v1/analyst/opportunities";
+const INVESTIGATIONS_ENDPOINT = "/api/v1/analyst/investigations";
 
 const form = document.querySelector("#ask-form");
 const questionInput = document.querySelector("#question");
@@ -17,6 +18,8 @@ const answerPanel = document.querySelector("#answer-panel");
 let lastQuestion = "";
 let lastOpportunityId = null;
 let lastOpportunityTitle = "";
+let lastInvestigationTaskId = null;
+let lastInvestigationTaskTitle = "";
 
 function clearNode(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
@@ -102,7 +105,114 @@ function opportunityAction(label, question, opportunity) {
   return button;
 }
 
-function renderOpportunityCard(opportunity) {
+function readinessLabel(readiness) {
+  const labels = {
+    READY_NOW: "READY NOW",
+    PARTIALLY_READY: "PARTIALLY READY",
+    BLOCKED_MISSING_EVIDENCE: "MISSING EVIDENCE",
+    BLOCKED_BOUNDARY: "BLOCKED BY BOUNDARY",
+  };
+  return labels[readiness] || readiness.replaceAll("_", " ");
+}
+
+function investigationAction(label, question, task) {
+  const button = textElement("button", label, "opportunity-action investigation-action");
+  button.type = "button";
+  button.dataset.investigationTaskId = task.task_id;
+  button.addEventListener("click", () => {
+    questionInput.value = question;
+    askPulse(question, null, "", task.task_id, task.title);
+  });
+  return button;
+}
+
+function renderInvestigationTask(task) {
+  const details = document.createElement("details");
+  details.className = "investigation-task";
+  const summary = document.createElement("summary");
+  const summaryCopy = document.createElement("span");
+  summaryCopy.className = "task-summary-copy";
+  summaryCopy.appendChild(textElement("span", `${task.task_order}. ${task.title}`, "task-title"));
+  summaryCopy.appendChild(textElement("span", task.objective, "task-objective"));
+  summary.appendChild(summaryCopy);
+  summary.appendChild(textElement(
+    "span",
+    readinessLabel(task.readiness),
+    `badge readiness-${task.readiness.toLowerCase()}`,
+  ));
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "investigation-task-body";
+
+  const actions = document.createElement("div");
+  actions.className = "opportunity-actions task-actions";
+  if (task.readiness === "READY_NOW") {
+    actions.appendChild(investigationAction("Why ready?", "Why can I investigate this now?", task));
+    actions.appendChild(investigationAction("What should this produce?", "What should this produce?", task));
+    actions.appendChild(investigationAction("When is it complete?", "When is this task complete?", task));
+  } else {
+    actions.appendChild(investigationAction("Why blocked?", "Why is this blocked?", task));
+    actions.appendChild(investigationAction("What data is missing?", "What data is missing?", task));
+  }
+  body.appendChild(actions);
+  appendDetailSection(body, "Available evidence", task.available_evidence_refs);
+  appendDetailSection(body, "Missing requirements", task.missing_requirement_ids);
+  appendDetailSection(body, "Expected output", task.expected_output);
+  appendDetailSection(body, "Completion criteria", task.completion_criteria);
+  appendDetailSection(body, "Would strengthen", task.strengthens_criteria);
+  appendDetailSection(body, "Would weaken", task.weakens_criteria);
+  appendDetailSection(body, "Limitation", task.limitation);
+  details.appendChild(body);
+  return details;
+}
+
+function renderPlanSummary(plan) {
+  const section = document.createElement("section");
+  section.className = "plan-summary";
+  if (!plan) {
+    section.appendChild(textElement("h4", "Investigation plan"));
+    section.appendChild(textElement("p", "Investigation plan unavailable.", "muted-copy"));
+    return section;
+  }
+  const heading = document.createElement("div");
+  heading.className = "plan-summary-heading";
+  heading.appendChild(textElement("h4", "Investigation plan"));
+  heading.appendChild(textElement("span", plan.status, `badge plan-${plan.status.toLowerCase()}`));
+  section.appendChild(heading);
+  const ready = plan.tasks.filter((task) => task.readiness === "READY_NOW").length;
+  const partial = plan.tasks.filter((task) => task.readiness === "PARTIALLY_READY").length;
+  const blocked = plan.tasks.filter((task) => task.readiness.startsWith("BLOCKED_")).length;
+  section.appendChild(textElement(
+    "p",
+    `Ready now ${ready} · Partial ${partial} · Blocked ${blocked}`,
+    "plan-task-counts",
+  ));
+  const recommended = plan.tasks.find(
+    (task) => task.task_id === plan.recommended_start_task_id,
+  );
+  section.appendChild(textElement(
+    "p",
+    `Recommended start: ${recommended ? recommended.title : "None"}`,
+    "plan-recommended",
+  ));
+  return section;
+}
+
+function renderPlanDetails(plan) {
+  const section = document.createElement("section");
+  section.className = "opportunity-detail-section investigation-plan-details";
+  section.appendChild(textElement("h4", "Investigation plan"));
+  if (!plan) {
+    section.appendChild(textElement("p", "Investigation plan unavailable.", "muted-copy"));
+    return section;
+  }
+  for (const task of plan.tasks) section.appendChild(renderInvestigationTask(task));
+  appendDetailSection(section, "Decision this plan could unlock", plan.decision_unlocked);
+  appendDetailSection(section, "Plan limitation", plan.limitation);
+  return section;
+}
+
+function renderOpportunityCard(opportunity, plan) {
   const card = document.createElement("article");
   card.className = "opportunity-card";
   card.dataset.opportunityOrder = String(opportunity.opportunity_order);
@@ -122,6 +232,7 @@ function renderOpportunityCard(opportunity) {
   card.appendChild(textElement("p", opportunity.observation_summary, "opportunity-observation"));
   const impact = formatImpact(opportunity);
   if (impact) card.appendChild(textElement("p", impact, "impact-proxy"));
+  card.appendChild(renderPlanSummary(plan));
 
   const actions = document.createElement("div");
   actions.className = "opportunity-actions";
@@ -142,14 +253,59 @@ function renderOpportunityCard(opportunity) {
   appendDetailSection(content, "Decision this evidence could unlock", opportunity.decision_unlocked);
   appendDetailSection(content, "Missing evidence", opportunity.missing_evidence);
   appendDetailSection(content, "Limitation", opportunity.limitation);
+  content.appendChild(renderPlanDetails(plan));
   content.appendChild(renderEvidenceDetails(opportunity));
   details.appendChild(content);
   card.appendChild(details);
   return card;
 }
 
-function renderOpportunities(payload) {
+function renderInvestigationPortfolio(portfolio) {
+  const panel = document.querySelector("#investigation-portfolio");
+  panel.hidden = false;
+  const counts = document.querySelector("#investigation-counts");
+  clearNode(counts);
+  counts.appendChild(textElement("span", `Ready now ${portfolio.ready_task_count}`, "badge readiness-ready_now"));
+  counts.appendChild(textElement("span", `Partial ${portfolio.partial_task_count}`, "badge readiness-partially_ready"));
+  counts.appendChild(textElement("span", `Blocked ${portfolio.blocked_task_count}`, "badge readiness-blocked_missing_evidence"));
+  counts.appendChild(textElement("span", `Evidence gaps ${portfolio.evidence_gaps.length}`, "badge"));
+
+  const allTasks = portfolio.plans.flatMap((plan) => plan.tasks);
+  const recommended = allTasks.find(
+    (task) => task.task_id === portfolio.recommended_start_task_id,
+  );
+  document.querySelector("#recommended-investigation").textContent =
+    `Recommended next investigation: ${recommended ? recommended.title : "None currently available"}`;
+
+  const gaps = document.querySelector("#evidence-gap-list");
+  clearNode(gaps);
+  if (!portfolio.evidence_gaps.length) {
+    gaps.appendChild(textElement("p", "No evidence gaps in the current validated context.", "muted-copy"));
+  }
+  for (const gap of portfolio.evidence_gaps) {
+    const item = document.createElement("article");
+    item.className = "evidence-gap-item";
+    const investigationCount = gap.affected_opportunity_ids.length;
+    const taskCount = gap.affected_task_ids.length;
+    item.appendChild(textElement("h4", gap.description));
+    item.appendChild(textElement(
+      "p",
+      `Used by ${investigationCount} ${investigationCount === 1 ? "investigation" : "investigations"} and ${taskCount} investigation ${taskCount === 1 ? "task" : "tasks"}.`,
+    ));
+    item.appendChild(textElement(
+      "p",
+      `Priorities: ${gap.opportunity_priorities.join(", ")}. Not available in current validated context.`,
+      "muted-copy",
+    ));
+    gaps.appendChild(item);
+  }
+}
+
+function renderOpportunities(payload, portfolio) {
   const opportunities = payload.opportunities;
+  const plansByOpportunityId = new Map(
+    portfolio.plans.map((plan) => [plan.opportunity_id, plan]),
+  );
   document.querySelector("#opportunities-heading").textContent = `${payload.count} opportunities need attention`;
   document.querySelector("#opportunities-subtitle").textContent = `Active as of ${payload.as_of_date}. Ordered by the deterministic opportunity engine.`;
   const counts = document.querySelector("#opportunity-counts");
@@ -161,20 +317,35 @@ function renderOpportunities(payload) {
   const cards = document.querySelector("#opportunity-cards");
   clearNode(cards);
   for (const opportunity of opportunities) {
-    cards.appendChild(renderOpportunityCard(opportunity));
+    cards.appendChild(renderOpportunityCard(
+      opportunity,
+      plansByOpportunityId.get(opportunity.opportunity_id),
+    ));
   }
   document.querySelector("#opportunities-status").textContent = opportunities.length ? "" : "No active opportunities.";
 }
 
-async function loadOpportunities() {
+async function loadProductData() {
   const status = document.querySelector("#opportunities-status");
   try {
-    const response = await fetch(`${OPPORTUNITIES_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message || "Opportunities are temporarily unavailable.");
-    renderOpportunities(payload);
+    const [opportunitiesResponse, investigationsResponse] = await Promise.all([
+      fetch(`${OPPORTUNITIES_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
+      fetch(`${INVESTIGATIONS_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
+    ]);
+    const [opportunities, portfolio] = await Promise.all([
+      opportunitiesResponse.json(),
+      investigationsResponse.json(),
+    ]);
+    if (!opportunitiesResponse.ok) {
+      throw new Error(opportunities.error?.message || "Opportunities are temporarily unavailable.");
+    }
+    if (!investigationsResponse.ok) {
+      throw new Error(portfolio.error?.message || "Investigation plans are temporarily unavailable.");
+    }
+    renderInvestigationPortfolio(portfolio);
+    renderOpportunities(opportunities, portfolio);
   } catch (error) {
-    status.textContent = error instanceof Error ? error.message : "Opportunities are temporarily unavailable.";
+    status.textContent = error instanceof Error ? error.message : "Investigation plans are temporarily unavailable.";
   }
 }
 
@@ -184,8 +355,10 @@ function renderAnswer(payload) {
   document.querySelector("#confidence-badge").textContent = `${answer.confidence} confidence`;
   document.querySelector("#partial-badge").hidden = !answer.cannot_answer_fully;
   const opportunityContext = document.querySelector("#answer-opportunity-context");
-  opportunityContext.hidden = !lastOpportunityId;
-  opportunityContext.textContent = lastOpportunityId ? `Answer about: ${lastOpportunityTitle}` : "";
+  opportunityContext.hidden = !lastOpportunityId && !lastInvestigationTaskId;
+  opportunityContext.textContent = lastInvestigationTaskId
+    ? `Answer about investigation: ${lastInvestigationTaskTitle}`
+    : (lastOpportunityId ? `Answer about: ${lastOpportunityTitle}` : "");
 
   const findings = document.querySelector("#findings-list");
   clearNode(findings);
@@ -246,7 +419,13 @@ function showError(message) {
   answerPanel.hidden = true;
 }
 
-async function askPulse(question, opportunityId = null, opportunityTitle = "") {
+async function askPulse(
+  question,
+  opportunityId = null,
+  opportunityTitle = "",
+  investigationTaskId = null,
+  investigationTaskTitle = "",
+) {
   const trimmed = question.trim();
   if (!trimmed) {
     showError("Enter an aggregate business question.");
@@ -256,11 +435,14 @@ async function askPulse(question, opportunityId = null, opportunityTitle = "") {
   lastQuestion = trimmed;
   lastOpportunityId = opportunityId;
   lastOpportunityTitle = opportunityTitle;
+  lastInvestigationTaskId = investigationTaskId;
+  lastInvestigationTaskTitle = investigationTaskTitle;
   errorPanel.hidden = true;
   setLoading(true);
   try {
     const requestBody = { business_id: BUSINESS_ID, question: trimmed };
-    if (opportunityId) requestBody.opportunity_id = opportunityId;
+    if (investigationTaskId) requestBody.investigation_task_id = investigationTaskId;
+    else if (opportunityId) requestBody.opportunity_id = opportunityId;
     const response = await fetch(ASK_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -291,7 +473,15 @@ for (const suggestion of document.querySelectorAll("[data-question]")) {
 }
 
 retryButton.addEventListener("click", () => {
-  if (lastQuestion) askPulse(lastQuestion, lastOpportunityId, lastOpportunityTitle);
+  if (lastQuestion) {
+    askPulse(
+      lastQuestion,
+      lastOpportunityId,
+      lastOpportunityTitle,
+      lastInvestigationTaskId,
+      lastInvestigationTaskTitle,
+    );
+  }
 });
 
-loadOpportunities();
+loadProductData();

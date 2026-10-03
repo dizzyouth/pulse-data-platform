@@ -1,4 +1,4 @@
-"""Thin service adapter over the analyst and opportunity engines."""
+"""Thin service adapter over analyst, opportunity, and investigation engines."""
 
 from __future__ import annotations
 
@@ -13,6 +13,19 @@ from src.api.models import ApiErrorCode
 from src.api.safety import is_aggregate_question, valid_business_id
 from src.intelligence.answer_models import AnalystAnswer, AnswerValidationError
 from src.intelligence.context import IntelligenceContext, build_context
+from src.intelligence.investigation_answers import (
+    answer_investigation_question,
+    classify_investigation_question,
+)
+from src.intelligence.investigation_models import (
+    InvestigationPlan,
+    InvestigationPortfolio,
+    InvestigationTask,
+    InvestigationValidationError,
+    valid_plan_id_shape,
+    valid_task_id_shape,
+)
+from src.intelligence.investigations import build_investigation_portfolio
 from src.intelligence.narration import (
     AnswerExecutionMetadata,
     answer_question_with_metadata,
@@ -86,6 +99,9 @@ class ServiceAnswer:
     evidence_count: int
     answer_source: str
     opportunity_type: str | None = None
+    investigation_plan_id: str | None = None
+    investigation_task_id: str | None = None
+    investigation_readiness: str | None = None
 
 
 ContextBuilder = Callable[[str], IntelligenceContext]
@@ -184,6 +200,24 @@ class AnalystService:
                 422,
             )
 
+    @staticmethod
+    def _validate_investigation_plan_id(plan_id: str) -> None:
+        if len(plan_id) > 240 or not valid_plan_id_shape(plan_id):
+            raise AnalystServiceError(
+                ApiErrorCode.INVALID_INVESTIGATION_ID,
+                "The request contains an invalid investigation plan identifier.",
+                422,
+            )
+
+    @staticmethod
+    def _validate_investigation_task_id(task_id: str) -> None:
+        if len(task_id) > 300 or not valid_task_id_shape(task_id):
+            raise AnalystServiceError(
+                ApiErrorCode.INVALID_INVESTIGATION_ID,
+                "The request contains an invalid investigation task identifier.",
+                422,
+            )
+
     def _build_context(self, business_id: str) -> IntelligenceContext:
         try:
             context = self._context_builder(business_id)
@@ -222,6 +256,75 @@ class AnalystService:
         self._validate_business_id(business_id)
         return self._evaluate(self._build_context(business_id))
 
+    @staticmethod
+    def _plan_portfolio(
+        context: IntelligenceContext,
+        evaluation: OpportunityEvaluation,
+    ) -> InvestigationPortfolio:
+        try:
+            return build_investigation_portfolio(context, evaluation)
+        except InvestigationValidationError:
+            raise AnalystServiceError(
+                ApiErrorCode.INVESTIGATION_VALIDATION_FAILED,
+                "The investigation planner could not produce safely validated results.",
+                422,
+            ) from None
+
+    def list_investigations(self, business_id: str) -> InvestigationPortfolio:
+        self._validate_business_id(business_id)
+        context = self._build_context(business_id)
+        evaluation = self._evaluate(context)
+        return self._plan_portfolio(context, evaluation)
+
+    def _resolve_investigation_plan(
+        self, business_id: str, plan_id: str
+    ) -> tuple[IntelligenceContext, InvestigationPortfolio, InvestigationPlan]:
+        self._validate_business_id(business_id)
+        self._validate_investigation_plan_id(plan_id)
+        context = self._build_context(business_id)
+        portfolio = self._plan_portfolio(context, self._evaluate(context))
+        plan = next((item for item in portfolio.plans if item.plan_id == plan_id), None)
+        if plan is None or plan.business_id != business_id:
+            raise AnalystServiceError(
+                ApiErrorCode.INVESTIGATION_PLAN_NOT_FOUND,
+                "No active investigation plan is available for this identifier and business.",
+                404,
+            )
+        return context, portfolio, plan
+
+    def get_investigation_plan(
+        self, business_id: str, plan_id: str
+    ) -> InvestigationPlan:
+        return self._resolve_investigation_plan(business_id, plan_id)[2]
+
+    def _resolve_investigation_task(
+        self, business_id: str, task_id: str
+    ) -> tuple[
+        IntelligenceContext,
+        InvestigationPortfolio,
+        InvestigationPlan,
+        InvestigationTask,
+    ]:
+        self._validate_business_id(business_id)
+        self._validate_investigation_task_id(task_id)
+        context = self._build_context(business_id)
+        portfolio = self._plan_portfolio(context, self._evaluate(context))
+        for plan in portfolio.plans:
+            task = next((item for item in plan.tasks if item.task_id == task_id), None)
+            if task is not None and plan.business_id == business_id:
+                return context, portfolio, plan, task
+        raise AnalystServiceError(
+            ApiErrorCode.INVESTIGATION_TASK_NOT_FOUND,
+            "No active investigation task is available for this identifier and business.",
+            404,
+        )
+
+    def get_investigation_task(
+        self, business_id: str, task_id: str
+    ) -> tuple[InvestigationPlan, InvestigationTask]:
+        _, _, plan, task = self._resolve_investigation_task(business_id, task_id)
+        return plan, task
+
     def _resolve_opportunity(
         self, business_id: str, opportunity_id: str
     ) -> tuple[IntelligenceContext, InvestigationOpportunity]:
@@ -248,14 +351,58 @@ class AnalystService:
         return self._resolve_opportunity(business_id, opportunity_id)[1]
 
     def ask(
-        self, business_id: str, question: str, opportunity_id: str | None = None
+        self,
+        business_id: str,
+        question: str,
+        opportunity_id: str | None = None,
+        investigation_task_id: str | None = None,
     ) -> ServiceAnswer:
         self._validate_business_id(business_id)
+        if opportunity_id is not None and investigation_task_id is not None:
+            raise AnalystServiceError(
+                ApiErrorCode.INVALID_REQUEST,
+                "Choose either an opportunity or an investigation task, not both.",
+                422,
+            )
         if not is_aggregate_question(question):
             raise AnalystServiceError(
                 ApiErrorCode.AGGREGATE_ONLY_REQUIRED,
                 "This analyst accepts aggregate business questions only.",
                 422,
+            )
+
+        if investigation_task_id is not None:
+            started = time.perf_counter()
+            context, portfolio, plan, task = self._resolve_investigation_task(
+                business_id, investigation_task_id
+            )
+            try:
+                answer = answer_investigation_question(
+                    question, task, plan, portfolio, context
+                )
+            except (AnswerValidationError, InvestigationValidationError):
+                raise AnalystServiceError(
+                    ApiErrorCode.INVESTIGATION_VALIDATION_FAILED,
+                    "The analyst could not produce a safely grounded investigation answer.",
+                    422,
+                ) from None
+            return ServiceAnswer(
+                answer=answer,
+                execution=AnswerExecutionMetadata(
+                    provider_call_count=0,
+                    repair_attempted=False,
+                    deterministic_fallback_used=False,
+                    fallback_intent=None,
+                    latency_ms=(time.perf_counter() - started) * 1000,
+                ),
+                question_category=classify_investigation_question(question).value,
+                provider="deterministic",
+                model="investigation-engine-v1",
+                evidence_count=len(context.evidence_items),
+                answer_source="deterministic_investigation",
+                investigation_plan_id=plan.plan_id,
+                investigation_task_id=task.task_id,
+                investigation_readiness=task.readiness.value,
             )
 
         if opportunity_id is not None:

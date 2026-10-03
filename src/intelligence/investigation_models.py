@@ -103,6 +103,16 @@ def stable_gap_id(requirement_id: str) -> str:
     return f"evidence-gap:{_slug(requirement_id.removeprefix('requirement:'))}"
 
 
+def valid_task_id_shape(value: str) -> bool:
+    """Return whether a value has the stable 6.7C task-ID shape."""
+    return isinstance(value, str) and bool(_TASK_ID.fullmatch(value))
+
+
+def valid_plan_id_shape(value: str) -> bool:
+    """Return whether a value has the stable 6.7C plan-ID shape."""
+    return isinstance(value, str) and bool(_PLAN_ID.fullmatch(value))
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EvidenceRequirement:
     requirement_id: str
