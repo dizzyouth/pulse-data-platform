@@ -2815,3 +2815,13 @@ ordinary and opportunity Ask behavior remains unchanged. The browser loads one
 portfolio, displays engine-owned readiness and recommended-start state, and
 persists no task state. See
 [`docs/phase_6_7d_investigation_product.md`](docs/phase_6_7d_investigation_product.md).
+
+## Phase 6.8A - decision readiness engine
+
+Pulse now evaluates whether current validated aggregate evidence is sufficient
+to place bounded decision questions in front of a human reviewer. Explicit
+decision classes, evidence requirements, counter/blocking evidence, and economic
+or measurement boundaries produce deterministic non-numeric readiness statuses.
+Readiness is not recommendation or authorization, and every assessment forbids
+autonomous action. The offline CLI is documented in
+[`docs/phase_6_8a_decision_readiness.md`](docs/phase_6_8a_decision_readiness.md).
