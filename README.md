@@ -2825,3 +2825,14 @@ or measurement boundaries produce deterministic non-numeric readiness statuses.
 Readiness is not recommendation or authorization, and every assessment forbids
 autonomous action. The offline CLI is documented in
 [`docs/phase_6_8a_decision_readiness.md`](docs/phase_6_8a_decision_readiness.md).
+
+## Phase 6.8B - Decision Readiness API and Ask Pulse integration
+
+The validated 6.8A portfolio is now available through business-scoped list and
+detail endpoints and is rendered in the existing Ask Pulse page. Decision
+questions use a deterministic, provider-free answer mode that preserves the
+difference between opportunity priority and bounded decision readiness, cites
+only validated context evidence, and keeps decision boundaries prominent.
+`READY_FOR_HUMAN_REVIEW` is not approval, recommendation, or authorization;
+Pulse selects and executes no action. See
+[`docs/phase_6_8b_decision_product.md`](docs/phase_6_8b_decision_product.md).

@@ -1,4 +1,4 @@
-"""FastAPI application for the local Phase 6.7D Ask Pulse product surface."""
+"""FastAPI application for the local Ask Pulse product surface."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ from src.api.models import (
     AskRequest,
     AskResponse,
     CapabilitiesResponse,
+    DecisionAssessmentResponse,
+    DecisionDetailResponse,
+    DecisionPortfolioResponse,
     ErrorDetail,
     ErrorResponse,
     ExecutionMetaResponse,
@@ -50,6 +53,11 @@ from src.intelligence.investigation_models import (
     InvestigationTask,
     valid_plan_id_shape,
     valid_task_id_shape,
+)
+from src.intelligence.decision_models import (
+    DecisionReadinessAssessment,
+    DecisionReadinessPortfolio,
+    valid_decision_id_shape,
 )
 
 
@@ -104,6 +112,18 @@ def _investigation_portfolio_response(
     portfolio: InvestigationPortfolio,
 ) -> InvestigationPortfolioResponse:
     return InvestigationPortfolioResponse.model_validate(portfolio.to_dict())
+
+
+def _decision_assessment_response(
+    assessment: DecisionReadinessAssessment,
+) -> DecisionAssessmentResponse:
+    return DecisionAssessmentResponse.model_validate(assessment.to_dict())
+
+
+def _decision_portfolio_response(
+    portfolio: DecisionReadinessPortfolio,
+) -> DecisionPortfolioResponse:
+    return DecisionPortfolioResponse.model_validate(portfolio.to_dict())
 
 
 def _request_id(request: Request) -> str:
@@ -351,6 +371,61 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             task=_investigation_task_response(task),
         )
 
+    @application.get(
+        "/api/v1/analyst/decisions",
+        response_model=DecisionPortfolioResponse,
+    )
+    async def list_decisions(
+        request: Request, business_id: str
+    ) -> DecisionPortfolioResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        portfolio = analyst.list_decisions(business_id)
+        response = _decision_portfolio_response(portfolio)
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s answer_source=%s "
+            "decision_count=%d ready_count=%d needs_evidence_count=%d "
+            "boundary_count=%d success=true",
+            _request_id(request),
+            business_id,
+            "deterministic_decision_readiness",
+            len(response.assessments),
+            response.ready_for_human_review_count,
+            response.needs_more_evidence_count,
+            response.blocked_by_boundary_count,
+        )
+        return response
+
+    @application.get(
+        "/api/v1/analyst/decisions/{decision_id}",
+        response_model=DecisionDetailResponse,
+    )
+    async def get_decision(
+        request: Request, decision_id: str, business_id: str
+    ) -> DecisionDetailResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        if len(decision_id) <= 300 and valid_decision_id_shape(decision_id):
+            request.state.decision_id = decision_id
+        assessment = analyst.get_decision(business_id, decision_id)
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s decision_id=%s "
+            "decision_type=%s decision_class=%s readiness=%s "
+            "answer_source=%s success=true",
+            _request_id(request),
+            business_id,
+            assessment.decision_id,
+            assessment.decision_type.value,
+            assessment.decision_class.value,
+            assessment.readiness.value,
+            "deterministic_decision_readiness",
+        )
+        return DecisionDetailResponse(
+            business_id=assessment.business_id,
+            as_of_date=assessment.as_of_date,
+            assessment=_decision_assessment_response(assessment),
+        )
+
     @application.post("/api/v1/analyst/ask", response_model=AskResponse)
     async def ask(request: Request, payload: AskRequest) -> AskResponse:
         request_id = _request_id(request)
@@ -366,11 +441,17 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             and valid_task_id_shape(payload.investigation_task_id)
         ):
             request.state.task_id = payload.investigation_task_id
+        if (
+            payload.decision_id is not None
+            and valid_decision_id_shape(payload.decision_id)
+        ):
+            request.state.decision_id = payload.decision_id
         result = analyst.ask(
             payload.business_id,
             payload.question,
             payload.opportunity_id,
             payload.investigation_task_id,
+            payload.decision_id,
         )
         answer = result.answer
         response = AskResponse(
@@ -413,7 +494,8 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
         LOGGER.info(
             "analyst_api request_id=%s business_id=%s question_category=%s "
             "opportunity_id=%s opportunity_type=%s plan_id=%s task_id=%s "
-            "task_readiness=%s answer_source=%s "
+            "task_readiness=%s decision_id=%s decision_type=%s "
+            "decision_class=%s decision_readiness=%s answer_source=%s "
             "provider=%s model=%s evidence_count=%d latency_ms=%.2f "
             "provider_call_count=%d repair_attempted=%s "
             "deterministic_fallback_used=%s success=true",
@@ -425,6 +507,10 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             result.investigation_plan_id or "NONE",
             result.investigation_task_id or "NONE",
             result.investigation_readiness or "NONE",
+            result.decision_id or "NONE",
+            result.decision_type or "NONE",
+            result.decision_class or "NONE",
+            result.decision_readiness or "NONE",
             result.answer_source,
             result.provider,
             result.model,

@@ -64,6 +64,11 @@ _DECISION_ID = re.compile(
 )
 
 
+def valid_decision_id_shape(value: str) -> bool:
+    """Return whether a value has the bounded stable decision-ID shape."""
+    return isinstance(value, str) and bool(_DECISION_ID.fullmatch(value))
+
+
 def _text(value: str, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise DecisionValidationError(f"{field} must be non-empty text")

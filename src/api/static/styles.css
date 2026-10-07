@@ -177,11 +177,12 @@ li { margin: 0.55rem 0; line-height: 1.5; }
 
 footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-size: 0.75rem; }
 
-.opportunities-section { margin-top: 1.5rem; }
+.opportunities-section, .decision-readiness-section { margin-top: 1.5rem; }
 .section-heading { display: flex; justify-content: space-between; gap: 1.5rem; align-items: end; }
 .section-heading h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.8rem, 4vw, 2.7rem); font-weight: 500; }
 .section-heading p:last-child { margin: 0.55rem 0 0; color: var(--muted); }
 .opportunity-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.45rem; }
+.decision-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.45rem; }
 .opportunities-status { margin-top: 1rem; color: var(--muted); }
 .investigation-portfolio { margin-top: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: var(--card); box-shadow: 0 10px 28px rgba(29, 55, 39, 0.05); padding: 1.1rem 1.2rem; }
 .investigation-portfolio-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
@@ -240,6 +241,27 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
 .task-objective { margin-top: 0.3rem; color: #536158; font-size: 0.72rem; font-weight: 500; line-height: 1.4; }
 .investigation-task-body { margin-top: 0.8rem; }
 .task-actions { margin-top: 0.7rem; }
+.opportunity-decision-summary { margin-top: 0.75rem; border: 1px solid #d7e2d9; border-radius: 0.8rem; background: #f5f8f4; padding: 0.8rem; }
+.opportunity-decision-summary h4, .opportunity-decision-summary p { margin: 0; }
+.opportunity-decision-summary h4 { font-size: 0.8rem; }
+.decision-summary-counts { margin-top: 0.45rem !important; color: #435047; font-size: 0.76rem; line-height: 1.45; }
+.first-reviewable-decision { margin: 1rem 0 0; color: var(--green-dark); font-weight: 750; line-height: 1.45; overflow-wrap: anywhere; }
+.decision-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; align-items: start; margin-top: 1rem; }
+.decision-card { min-width: 0; border: 1px solid var(--line); border-radius: 1.2rem; background: var(--card); box-shadow: 0 10px 28px rgba(29, 55, 39, 0.05); padding: 1.25rem; overflow-wrap: anywhere; }
+.decision-card-heading { display: flex; justify-content: space-between; gap: 0.75rem; align-items: start; }
+.decision-badges { justify-content: flex-start; }
+.decision-card h3 { margin: 1rem 0 0.35rem; font-size: 1.08rem; line-height: 1.4; }
+.decision-origin { margin: 0; color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+.decision-rationale { margin: 0.85rem 0 0; font-size: 0.84rem; line-height: 1.5; }
+.decision-boundary { margin: 0.85rem 0 0; border-left: 3px solid var(--amber); border-radius: 0.5rem; background: var(--amber-soft); color: #6f4914; font-size: 0.8rem; font-weight: 650; line-height: 1.5; padding: 0.7rem 0.8rem; }
+.decision-agency { margin: 0.65rem 0 0; color: var(--green-dark); font-size: 0.75rem; font-weight: 700; }
+.decision-details { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.9rem; }
+.decision-details > summary, .decision-technical > summary { cursor: pointer; font-size: 0.82rem; font-weight: 750; }
+.decision-details-content { margin-top: 0.9rem; }
+.decision-technical { margin-top: 0.8rem; border-radius: 0.65rem; background: #f8faf7; padding: 0.75rem; }
+.decision-readiness-ready_for_human_review { background: var(--green-soft); color: var(--green-dark); }
+.decision-readiness-needs_more_evidence { background: var(--amber-soft); color: var(--amber); }
+.decision-readiness-blocked_by_boundary { background: #eef2ed; color: #526358; }
 
 @media (max-width: 760px) {
   .environment-pill { display: none; }
@@ -250,6 +272,7 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
   .investigation-portfolio-heading { display: block; }
   .investigation-counts { justify-content: flex-start; margin-top: 0.8rem; }
   .opportunity-counts { justify-content: flex-start; margin-top: 0.8rem; }
+  .decision-counts { justify-content: flex-start; margin-top: 0.8rem; }
   .badges { justify-content: flex-start; margin-top: 0.7rem; }
   .metadata-card dl { grid-template-columns: 1fr; gap: 0.2rem; }
   .metadata-card dd { margin-bottom: 0.5rem; }

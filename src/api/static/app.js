@@ -4,6 +4,7 @@ const BUSINESS_ID = "sama_cod_pilot";
 const ASK_ENDPOINT = "/api/v1/analyst/ask";
 const OPPORTUNITIES_ENDPOINT = "/api/v1/analyst/opportunities";
 const INVESTIGATIONS_ENDPOINT = "/api/v1/analyst/investigations";
+const DECISIONS_ENDPOINT = "/api/v1/analyst/decisions";
 
 const form = document.querySelector("#ask-form");
 const questionInput = document.querySelector("#question");
@@ -20,6 +21,8 @@ let lastOpportunityId = null;
 let lastOpportunityTitle = "";
 let lastInvestigationTaskId = null;
 let lastInvestigationTaskTitle = "";
+let lastDecisionId = null;
+let lastDecisionTitle = "";
 
 function clearNode(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
@@ -115,6 +118,25 @@ function readinessLabel(readiness) {
   return labels[readiness] || readiness.replaceAll("_", " ");
 }
 
+function decisionReadinessLabel(readiness) {
+  const labels = {
+    READY_FOR_HUMAN_REVIEW: "READY FOR HUMAN REVIEW",
+    NEEDS_MORE_EVIDENCE: "NEEDS MORE EVIDENCE",
+    BLOCKED_BY_BOUNDARY: "BLOCKED BY BOUNDARY",
+  };
+  return labels[readiness] || readiness.replaceAll("_", " ");
+}
+
+function decisionClassLabel(decisionClass) {
+  const labels = {
+    INVESTIGATION_DIRECTION: "Investigation direction",
+    BUSINESS_CHANGE_CONSIDERATION: "Business change consideration",
+    MEASUREMENT_GOVERNANCE: "Measurement governance",
+    FINANCIAL_DECISION: "Financial decision",
+  };
+  return labels[decisionClass] || decisionClass.replaceAll("_", " ").toLowerCase();
+}
+
 function investigationAction(label, question, task) {
   const button = textElement("button", label, "opportunity-action investigation-action");
   button.type = "button";
@@ -122,6 +144,25 @@ function investigationAction(label, question, task) {
   button.addEventListener("click", () => {
     questionInput.value = question;
     askPulse(question, null, "", task.task_id, task.title);
+  });
+  return button;
+}
+
+function decisionAction(label, question, assessment) {
+  const button = textElement("button", label, "opportunity-action decision-action");
+  button.type = "button";
+  button.dataset.decisionId = assessment.decision_id;
+  button.addEventListener("click", () => {
+    questionInput.value = question;
+    askPulse(
+      question,
+      null,
+      "",
+      null,
+      "",
+      assessment.decision_id,
+      assessment.decision_question,
+    );
   });
   return button;
 }
@@ -212,7 +253,118 @@ function renderPlanDetails(plan) {
   return section;
 }
 
-function renderOpportunityCard(opportunity, plan) {
+function renderOpportunityDecisionSummary(assessments) {
+  const section = document.createElement("section");
+  section.className = "opportunity-decision-summary";
+  section.appendChild(textElement("h4", "Decision readiness"));
+  if (!assessments.length) {
+    section.appendChild(textElement("p", "No active decision assessments.", "muted-copy"));
+    return section;
+  }
+  const ready = assessments.filter(
+    (item) => item.readiness === "READY_FOR_HUMAN_REVIEW",
+  ).length;
+  const needs = assessments.filter(
+    (item) => item.readiness === "NEEDS_MORE_EVIDENCE",
+  ).length;
+  const blocked = assessments.filter(
+    (item) => item.readiness === "BLOCKED_BY_BOUNDARY",
+  ).length;
+  section.appendChild(textElement(
+    "p",
+    `${ready} ready for human review · ${needs} need more evidence · ${blocked} blocked by boundary`,
+    "decision-summary-counts",
+  ));
+  return section;
+}
+
+function renderDecisionCard(assessment, opportunity, plan) {
+  const card = document.createElement("article");
+  card.className = "decision-card";
+  card.dataset.decisionOrder = String(assessment.decision_order);
+
+  const heading = document.createElement("div");
+  heading.className = "decision-card-heading";
+  const badges = document.createElement("div");
+  badges.className = "badges decision-badges";
+  badges.appendChild(textElement(
+    "span",
+    decisionReadinessLabel(assessment.readiness),
+    `badge decision-readiness-${assessment.readiness.toLowerCase()}`,
+  ));
+  badges.appendChild(textElement(
+    "span",
+    decisionClassLabel(assessment.decision_class),
+    "badge",
+  ));
+  heading.appendChild(badges);
+  heading.appendChild(textElement("span", `#${assessment.decision_order}`, "opportunity-order"));
+  card.appendChild(heading);
+  card.appendChild(textElement("h3", assessment.decision_question));
+  card.appendChild(textElement(
+    "p",
+    opportunity
+      ? `From ${opportunity.title} · ${opportunity.priority} priority / ${opportunity.confidence} confidence`
+      : "Originating opportunity is unavailable in the current product payload.",
+    "decision-origin",
+  ));
+  card.appendChild(textElement("p", assessment.rationale_summary, "decision-rationale"));
+  card.appendChild(textElement("p", assessment.decision_boundary, "decision-boundary"));
+  const humanReviewValue = assessment.human_review_required ? "Yes" : "No";
+  const autonomousActionValue = assessment.autonomous_action_allowed ? "Yes" : "No";
+  card.appendChild(textElement(
+    "p",
+    `Human review required: ${humanReviewValue} · Autonomous action allowed: ${autonomousActionValue}`,
+    "decision-agency",
+  ));
+
+  const actions = document.createElement("div");
+  actions.className = "opportunity-actions decision-actions";
+  if (assessment.readiness === "READY_FOR_HUMAN_REVIEW") {
+    actions.appendChild(decisionAction("Why ready?", "Why is this ready for human review?", assessment));
+    actions.appendChild(decisionAction("What is the boundary?", "What is the decision boundary?", assessment));
+    actions.appendChild(decisionAction("Does this recommend an action?", "Does ready mean Pulse recommends the change?", assessment));
+  } else if (assessment.readiness === "BLOCKED_BY_BOUNDARY") {
+    actions.appendChild(decisionAction("Why blocked?", "Why is this blocked by a boundary?", assessment));
+    actions.appendChild(decisionAction("What is the boundary?", "What is the decision boundary?", assessment));
+  } else {
+    actions.appendChild(decisionAction("Why not ready?", "Why is this not ready?", assessment));
+    actions.appendChild(decisionAction("What evidence is missing?", "What evidence is missing?", assessment));
+    actions.appendChild(decisionAction("What could raise readiness?", "What could raise readiness?", assessment));
+  }
+  card.appendChild(actions);
+
+  const details = document.createElement("details");
+  details.className = "decision-details";
+  details.appendChild(textElement("summary", "View decision details"));
+  const content = document.createElement("div");
+  content.className = "decision-details-content";
+  appendDetailSection(content, "Why", assessment.rationale_summary);
+  appendDetailSection(content, "Reason codes", assessment.readiness_reason_codes);
+  appendDetailSection(content, "Supporting evidence", assessment.supporting_evidence_refs);
+  appendDetailSection(content, "Counter evidence", assessment.counter_evidence_refs);
+  appendDetailSection(content, "Blocking evidence", assessment.blocking_evidence_refs);
+  appendDetailSection(content, "Required evidence", assessment.required_requirement_ids);
+  appendDetailSection(content, "Unresolved evidence", assessment.unresolved_requirement_ids);
+  appendDetailSection(content, "Tasks that could raise readiness", assessment.next_evidence_task_ids);
+  appendDetailSection(content, "Decision boundary", assessment.decision_boundary);
+  appendDetailSection(content, "Human review required", assessment.human_review_required ? "Yes" : "No");
+  appendDetailSection(content, "Autonomous action allowed", assessment.autonomous_action_allowed ? "Yes" : "No");
+  appendDetailSection(content, "Limitation", assessment.limitation);
+  const technical = document.createElement("details");
+  technical.className = "decision-technical";
+  technical.appendChild(textElement("summary", "Technical associations"));
+  appendDetailSection(technical, "Decision ID", assessment.decision_id);
+  appendDetailSection(technical, "Opportunity ID", assessment.originating_opportunity_id);
+  appendDetailSection(technical, "Investigation plan ID", assessment.investigation_plan_id);
+  if (!plan) appendDetailSection(technical, "Plan state", "Plan unavailable in current product payload.");
+  content.appendChild(technical);
+  details.appendChild(content);
+  card.appendChild(details);
+  return card;
+}
+
+function renderOpportunityCard(opportunity, plan, assessments) {
   const card = document.createElement("article");
   card.className = "opportunity-card";
   card.dataset.opportunityOrder = String(opportunity.opportunity_order);
@@ -233,6 +385,7 @@ function renderOpportunityCard(opportunity, plan) {
   const impact = formatImpact(opportunity);
   if (impact) card.appendChild(textElement("p", impact, "impact-proxy"));
   card.appendChild(renderPlanSummary(plan));
+  card.appendChild(renderOpportunityDecisionSummary(assessments));
 
   const actions = document.createElement("div");
   actions.className = "opportunity-actions";
@@ -301,11 +454,64 @@ function renderInvestigationPortfolio(portfolio) {
   }
 }
 
-function renderOpportunities(payload, portfolio) {
+function renderDecisionPortfolio(decisions, opportunities, investigations) {
+  const section = document.querySelector("#decision-readiness-section");
+  section.hidden = false;
+  const counts = document.querySelector("#decision-counts");
+  clearNode(counts);
+  counts.appendChild(textElement(
+    "span",
+    `Ready for human review ${decisions.ready_for_human_review_count}`,
+    "badge decision-readiness-ready_for_human_review",
+  ));
+  counts.appendChild(textElement(
+    "span",
+    `Need more evidence ${decisions.needs_more_evidence_count}`,
+    "badge decision-readiness-needs_more_evidence",
+  ));
+  counts.appendChild(textElement(
+    "span",
+    `Blocked by boundary ${decisions.blocked_by_boundary_count}`,
+    "badge decision-readiness-blocked_by_boundary",
+  ));
+
+  const first = decisions.assessments.find(
+    (item) => item.decision_id === decisions.first_reviewable_decision_id,
+  );
+  document.querySelector("#first-reviewable-decision").textContent =
+    `First reviewable decision: ${first ? first.decision_question : "None currently available"}`;
+
+  const opportunitiesById = new Map(
+    opportunities.opportunities.map((item) => [item.opportunity_id, item]),
+  );
+  const plansById = new Map(
+    investigations.plans.map((item) => [item.plan_id, item]),
+  );
+  const cards = document.querySelector("#decision-cards");
+  clearNode(cards);
+  for (const assessment of decisions.assessments) {
+    cards.appendChild(renderDecisionCard(
+      assessment,
+      opportunitiesById.get(assessment.originating_opportunity_id),
+      plansById.get(assessment.investigation_plan_id),
+    ));
+  }
+  document.querySelector("#decisions-status").textContent = decisions.assessments.length
+    ? ""
+    : "No active decision-readiness assessments.";
+}
+
+function renderOpportunities(payload, portfolio, decisions) {
   const opportunities = payload.opportunities;
   const plansByOpportunityId = new Map(
     portfolio.plans.map((plan) => [plan.opportunity_id, plan]),
   );
+  const decisionsByOpportunityId = new Map();
+  for (const assessment of decisions.assessments) {
+    const values = decisionsByOpportunityId.get(assessment.originating_opportunity_id) || [];
+    values.push(assessment);
+    decisionsByOpportunityId.set(assessment.originating_opportunity_id, values);
+  }
   document.querySelector("#opportunities-heading").textContent = `${payload.count} opportunities need attention`;
   document.querySelector("#opportunities-subtitle").textContent = `Active as of ${payload.as_of_date}. Ordered by the deterministic opportunity engine.`;
   const counts = document.querySelector("#opportunity-counts");
@@ -320,6 +526,7 @@ function renderOpportunities(payload, portfolio) {
     cards.appendChild(renderOpportunityCard(
       opportunity,
       plansByOpportunityId.get(opportunity.opportunity_id),
+      decisionsByOpportunityId.get(opportunity.opportunity_id) || [],
     ));
   }
   document.querySelector("#opportunities-status").textContent = opportunities.length ? "" : "No active opportunities.";
@@ -328,13 +535,15 @@ function renderOpportunities(payload, portfolio) {
 async function loadProductData() {
   const status = document.querySelector("#opportunities-status");
   try {
-    const [opportunitiesResponse, investigationsResponse] = await Promise.all([
+    const [opportunitiesResponse, investigationsResponse, decisionsResponse] = await Promise.all([
       fetch(`${OPPORTUNITIES_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
       fetch(`${INVESTIGATIONS_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
+      fetch(`${DECISIONS_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
     ]);
-    const [opportunities, portfolio] = await Promise.all([
+    const [opportunities, portfolio, decisions] = await Promise.all([
       opportunitiesResponse.json(),
       investigationsResponse.json(),
+      decisionsResponse.json(),
     ]);
     if (!opportunitiesResponse.ok) {
       throw new Error(opportunities.error?.message || "Opportunities are temporarily unavailable.");
@@ -342,8 +551,12 @@ async function loadProductData() {
     if (!investigationsResponse.ok) {
       throw new Error(portfolio.error?.message || "Investigation plans are temporarily unavailable.");
     }
+    if (!decisionsResponse.ok) {
+      throw new Error(decisions.error?.message || "Decision readiness is temporarily unavailable.");
+    }
     renderInvestigationPortfolio(portfolio);
-    renderOpportunities(opportunities, portfolio);
+    renderDecisionPortfolio(decisions, opportunities, portfolio);
+    renderOpportunities(opportunities, portfolio, decisions);
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "Investigation plans are temporarily unavailable.";
   }
@@ -355,10 +568,12 @@ function renderAnswer(payload) {
   document.querySelector("#confidence-badge").textContent = `${answer.confidence} confidence`;
   document.querySelector("#partial-badge").hidden = !answer.cannot_answer_fully;
   const opportunityContext = document.querySelector("#answer-opportunity-context");
-  opportunityContext.hidden = !lastOpportunityId && !lastInvestigationTaskId;
-  opportunityContext.textContent = lastInvestigationTaskId
-    ? `Answer about investigation: ${lastInvestigationTaskTitle}`
-    : (lastOpportunityId ? `Answer about: ${lastOpportunityTitle}` : "");
+  opportunityContext.hidden = !lastOpportunityId && !lastInvestigationTaskId && !lastDecisionId;
+  opportunityContext.textContent = lastDecisionId
+    ? `Answer about decision: ${lastDecisionTitle}`
+    : (lastInvestigationTaskId
+      ? `Answer about investigation: ${lastInvestigationTaskTitle}`
+      : (lastOpportunityId ? `Answer about: ${lastOpportunityTitle}` : ""));
 
   const findings = document.querySelector("#findings-list");
   clearNode(findings);
@@ -425,6 +640,8 @@ async function askPulse(
   opportunityTitle = "",
   investigationTaskId = null,
   investigationTaskTitle = "",
+  decisionId = null,
+  decisionTitle = "",
 ) {
   const trimmed = question.trim();
   if (!trimmed) {
@@ -437,11 +654,14 @@ async function askPulse(
   lastOpportunityTitle = opportunityTitle;
   lastInvestigationTaskId = investigationTaskId;
   lastInvestigationTaskTitle = investigationTaskTitle;
+  lastDecisionId = decisionId;
+  lastDecisionTitle = decisionTitle;
   errorPanel.hidden = true;
   setLoading(true);
   try {
     const requestBody = { business_id: BUSINESS_ID, question: trimmed };
-    if (investigationTaskId) requestBody.investigation_task_id = investigationTaskId;
+    if (decisionId) requestBody.decision_id = decisionId;
+    else if (investigationTaskId) requestBody.investigation_task_id = investigationTaskId;
     else if (opportunityId) requestBody.opportunity_id = opportunityId;
     const response = await fetch(ASK_ENDPOINT, {
       method: "POST",
@@ -480,6 +700,8 @@ retryButton.addEventListener("click", () => {
       lastOpportunityTitle,
       lastInvestigationTaskId,
       lastInvestigationTaskTitle,
+      lastDecisionId,
+      lastDecisionTitle,
     );
   }
 });

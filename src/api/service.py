@@ -1,4 +1,4 @@
-"""Thin service adapter over analyst, opportunity, and investigation engines."""
+"""Thin service adapter over analyst, opportunity, investigation, and decision engines."""
 
 from __future__ import annotations
 
@@ -13,6 +13,17 @@ from src.api.models import ApiErrorCode
 from src.api.safety import is_aggregate_question, valid_business_id
 from src.intelligence.answer_models import AnalystAnswer, AnswerValidationError
 from src.intelligence.context import IntelligenceContext, build_context
+from src.intelligence.decision_answers import (
+    answer_decision_question,
+    classify_decision_question,
+)
+from src.intelligence.decision_models import (
+    DecisionReadinessAssessment,
+    DecisionReadinessPortfolio,
+    DecisionValidationError,
+    valid_decision_id_shape,
+)
+from src.intelligence.decisions import build_decision_readiness_portfolio
 from src.intelligence.investigation_answers import (
     answer_investigation_question,
     classify_investigation_question,
@@ -68,6 +79,9 @@ CAPABILITIES = (
     "Identify deterministic cross-domain investigation opportunities",
     "Explain opportunity hypotheses and confirmation or refutation criteria",
     "Explain what future decision better evidence could unlock",
+    "Evaluate whether evidence is sufficient for bounded human decision review",
+    "Explain why a decision is or is not ready",
+    "Identify evidence and investigations that could raise readiness",
 )
 
 LIMITATIONS = (
@@ -76,6 +90,7 @@ LIMITATIONS = (
     "No trusted cross-currency profit while FX_REQUIRED applies.",
     "No persistent conversation memory.",
     "Observed differences do not establish causal reasons.",
+    "No autonomous decisions or recommendation execution.",
 )
 
 
@@ -102,6 +117,10 @@ class ServiceAnswer:
     investigation_plan_id: str | None = None
     investigation_task_id: str | None = None
     investigation_readiness: str | None = None
+    decision_id: str | None = None
+    decision_type: str | None = None
+    decision_class: str | None = None
+    decision_readiness: str | None = None
 
 
 ContextBuilder = Callable[[str], IntelligenceContext]
@@ -218,6 +237,15 @@ class AnalystService:
                 422,
             )
 
+    @staticmethod
+    def _validate_decision_id(decision_id: str) -> None:
+        if len(decision_id) > 300 or not valid_decision_id_shape(decision_id):
+            raise AnalystServiceError(
+                ApiErrorCode.INVALID_DECISION_ID,
+                "The request contains an invalid decision identifier.",
+                422,
+            )
+
     def _build_context(self, business_id: str) -> IntelligenceContext:
         try:
             context = self._context_builder(business_id)
@@ -275,6 +303,98 @@ class AnalystService:
         context = self._build_context(business_id)
         evaluation = self._evaluate(context)
         return self._plan_portfolio(context, evaluation)
+
+    @staticmethod
+    def _decision_portfolio(
+        context: IntelligenceContext,
+        evaluation: OpportunityEvaluation,
+        investigation_portfolio: InvestigationPortfolio,
+    ) -> DecisionReadinessPortfolio:
+        try:
+            return build_decision_readiness_portfolio(
+                context, evaluation, investigation_portfolio
+            )
+        except DecisionValidationError:
+            raise AnalystServiceError(
+                ApiErrorCode.DECISION_VALIDATION_FAILED,
+                "The decision-readiness engine could not produce safely validated results.",
+                422,
+            ) from None
+
+    def list_decisions(self, business_id: str) -> DecisionReadinessPortfolio:
+        self._validate_business_id(business_id)
+        context = self._build_context(business_id)
+        evaluation = self._evaluate(context)
+        investigations = self._plan_portfolio(context, evaluation)
+        return self._decision_portfolio(context, evaluation, investigations)
+
+    def _resolve_decision(
+        self, business_id: str, decision_id: str
+    ) -> tuple[
+        IntelligenceContext,
+        OpportunityEvaluation,
+        InvestigationPortfolio,
+        DecisionReadinessPortfolio,
+        DecisionReadinessAssessment,
+        InvestigationOpportunity,
+        InvestigationPlan,
+    ]:
+        self._validate_business_id(business_id)
+        self._validate_decision_id(decision_id)
+        context = self._build_context(business_id)
+        evaluation = self._evaluate(context)
+        investigations = self._plan_portfolio(context, evaluation)
+        decisions = self._decision_portfolio(context, evaluation, investigations)
+        assessment = next(
+            (item for item in decisions.assessments if item.decision_id == decision_id),
+            None,
+        )
+        if assessment is None or assessment.business_id != business_id:
+            raise AnalystServiceError(
+                ApiErrorCode.DECISION_NOT_FOUND,
+                "No active decision-readiness assessment is available for this identifier and business.",
+                404,
+            )
+        opportunity = next(
+            (
+                item for item in evaluation.opportunities
+                if item.opportunity_id == assessment.originating_opportunity_id
+            ),
+            None,
+        )
+        plan = next(
+            (
+                item for item in investigations.plans
+                if item.plan_id == assessment.investigation_plan_id
+            ),
+            None,
+        )
+        if (
+            opportunity is None
+            or plan is None
+            or opportunity.business_id != business_id
+            or plan.business_id != business_id
+            or plan.opportunity_id != opportunity.opportunity_id
+        ):
+            raise AnalystServiceError(
+                ApiErrorCode.DECISION_VALIDATION_FAILED,
+                "The decision assessment could not be resolved safely.",
+                422,
+            )
+        return (
+            context,
+            evaluation,
+            investigations,
+            decisions,
+            assessment,
+            opportunity,
+            plan,
+        )
+
+    def get_decision(
+        self, business_id: str, decision_id: str
+    ) -> DecisionReadinessAssessment:
+        return self._resolve_decision(business_id, decision_id)[4]
 
     def _resolve_investigation_plan(
         self, business_id: str, plan_id: str
@@ -356,12 +476,15 @@ class AnalystService:
         question: str,
         opportunity_id: str | None = None,
         investigation_task_id: str | None = None,
+        decision_id: str | None = None,
     ) -> ServiceAnswer:
         self._validate_business_id(business_id)
-        if opportunity_id is not None and investigation_task_id is not None:
+        if sum(item is not None for item in (
+            opportunity_id, investigation_task_id, decision_id
+        )) > 1:
             raise AnalystServiceError(
                 ApiErrorCode.INVALID_REQUEST,
-                "Choose either an opportunity or an investigation task, not both.",
+                "Choose only one opportunity, investigation task, or decision context.",
                 422,
             )
         if not is_aggregate_question(question):
@@ -369,6 +492,55 @@ class AnalystService:
                 ApiErrorCode.AGGREGATE_ONLY_REQUIRED,
                 "This analyst accepts aggregate business questions only.",
                 422,
+            )
+
+        if decision_id is not None:
+            started = time.perf_counter()
+            (
+                context,
+                _evaluation,
+                investigations,
+                decisions,
+                assessment,
+                opportunity,
+                plan,
+            ) = self._resolve_decision(business_id, decision_id)
+            try:
+                answer = answer_decision_question(
+                    question,
+                    assessment,
+                    opportunity,
+                    plan,
+                    decisions,
+                    investigations,
+                    context,
+                )
+            except AnswerValidationError:
+                raise AnalystServiceError(
+                    ApiErrorCode.DECISION_VALIDATION_FAILED,
+                    "The analyst could not produce a safely grounded decision answer.",
+                    422,
+                ) from None
+            return ServiceAnswer(
+                answer=answer,
+                execution=AnswerExecutionMetadata(
+                    provider_call_count=0,
+                    repair_attempted=False,
+                    deterministic_fallback_used=False,
+                    fallback_intent=None,
+                    latency_ms=(time.perf_counter() - started) * 1000,
+                ),
+                question_category=classify_decision_question(question).value,
+                provider="deterministic",
+                model="decision-readiness-engine-v1",
+                evidence_count=len(context.evidence_items),
+                answer_source="deterministic_decision_readiness",
+                opportunity_type=opportunity.opportunity_type.value,
+                investigation_plan_id=plan.plan_id,
+                decision_id=assessment.decision_id,
+                decision_type=assessment.decision_type.value,
+                decision_class=assessment.decision_class.value,
+                decision_readiness=assessment.readiness.value,
             )
 
         if investigation_task_id is not None:

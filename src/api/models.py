@@ -1,4 +1,4 @@
-"""Strict public contracts for the Phase 6.7D Analyst API."""
+"""Strict public contracts for the Ask Pulse Analyst API."""
 
 from __future__ import annotations
 
@@ -17,8 +17,12 @@ class AskRequest(StrictApiModel):
     question: str = Field(min_length=1, max_length=1000)
     opportunity_id: str | None = Field(default=None, min_length=1, max_length=200)
     investigation_task_id: str | None = Field(default=None, min_length=1, max_length=300)
+    decision_id: str | None = Field(default=None, min_length=1, max_length=300)
 
-    @field_validator("business_id", "question", "opportunity_id", "investigation_task_id")
+    @field_validator(
+        "business_id", "question", "opportunity_id", "investigation_task_id",
+        "decision_id",
+    )
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -30,9 +34,14 @@ class AskRequest(StrictApiModel):
 
     @model_validator(mode="after")
     def select_one_answer_mode(self) -> "AskRequest":
-        if self.opportunity_id is not None and self.investigation_task_id is not None:
+        modes = (
+            self.opportunity_id,
+            self.investigation_task_id,
+            self.decision_id,
+        )
+        if sum(item is not None for item in modes) > 1:
             raise ValueError(
-                "opportunity_id and investigation_task_id cannot both be supplied"
+                "Only one contextual object identifier may be supplied"
             )
         return self
 
@@ -214,6 +223,48 @@ class InvestigationTaskDetailResponse(StrictApiModel):
     task: InvestigationTaskResponse
 
 
+class DecisionAssessmentResponse(StrictApiModel):
+    decision_order: int
+    decision_id: str
+    business_id: str
+    as_of_date: date
+    originating_opportunity_id: str
+    investigation_plan_id: str
+    decision_type: str
+    decision_class: str
+    decision_question: str
+    readiness: str
+    readiness_reason_codes: list[str]
+    rationale_summary: str
+    supporting_evidence_refs: list[str]
+    counter_evidence_refs: list[str]
+    blocking_evidence_refs: list[str]
+    required_requirement_ids: list[str]
+    unresolved_requirement_ids: list[str]
+    relevant_investigation_task_ids: list[str]
+    next_evidence_task_ids: list[str]
+    decision_boundary: str
+    human_review_required: bool
+    autonomous_action_allowed: bool
+    limitation: str
+
+
+class DecisionPortfolioResponse(StrictApiModel):
+    business_id: str
+    as_of_date: date
+    assessments: list[DecisionAssessmentResponse]
+    ready_for_human_review_count: int
+    needs_more_evidence_count: int
+    blocked_by_boundary_count: int
+    first_reviewable_decision_id: str | None
+
+
+class DecisionDetailResponse(StrictApiModel):
+    business_id: str
+    as_of_date: date
+    assessment: DecisionAssessmentResponse
+
+
 class ApiErrorCode(StrEnum):
     INVALID_REQUEST = "INVALID_REQUEST"
     BUSINESS_NOT_FOUND = "BUSINESS_NOT_FOUND"
@@ -229,6 +280,9 @@ class ApiErrorCode(StrEnum):
     INVESTIGATION_PLAN_NOT_FOUND = "INVESTIGATION_PLAN_NOT_FOUND"
     INVESTIGATION_TASK_NOT_FOUND = "INVESTIGATION_TASK_NOT_FOUND"
     INVESTIGATION_VALIDATION_FAILED = "INVESTIGATION_VALIDATION_FAILED"
+    INVALID_DECISION_ID = "INVALID_DECISION_ID"
+    DECISION_NOT_FOUND = "DECISION_NOT_FOUND"
+    DECISION_VALIDATION_FAILED = "DECISION_VALIDATION_FAILED"
 
 
 class ErrorDetail(StrictApiModel):
