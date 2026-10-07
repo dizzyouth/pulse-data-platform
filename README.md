@@ -2836,3 +2836,15 @@ only validated context evidence, and keeps decision boundaries prominent.
 `READY_FOR_HUMAN_REVIEW` is not approval, recommendation, or authorization;
 Pulse selects and executes no action. See
 [`docs/phase_6_8b_decision_product.md`](docs/phase_6_8b_decision_product.md).
+
+## Phase 6.9A - evidence leverage and investigation sequencing
+
+Pulse now aggregates unresolved evidence requirements across current non-ready
+decisions and deterministically orders only the existing investigations that
+the decision engine identified as capable of raising readiness. Transparent
+counts and lexicographic tie-breaks replace opaque scores. A recommended task
+must already be `READY_NOW`; otherwise the portfolio truthfully reports an
+evidence-gap-first state without forcing a recommendation. This offline engine
+does not execute work, promise decision unlocks, rank business actions, or add
+API/UI behavior. See
+[`docs/phase_6_9a_evidence_leverage_sequencing.md`](docs/phase_6_9a_evidence_leverage_sequencing.md).
