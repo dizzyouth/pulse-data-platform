@@ -18,10 +18,14 @@ class AskRequest(StrictApiModel):
     opportunity_id: str | None = Field(default=None, min_length=1, max_length=200)
     investigation_task_id: str | None = Field(default=None, min_length=1, max_length=300)
     decision_id: str | None = Field(default=None, min_length=1, max_length=300)
+    sequencing_requirement_id: str | None = Field(
+        default=None, min_length=1, max_length=240
+    )
+    sequencing_task_id: str | None = Field(default=None, min_length=1, max_length=300)
 
     @field_validator(
         "business_id", "question", "opportunity_id", "investigation_task_id",
-        "decision_id",
+        "decision_id", "sequencing_requirement_id", "sequencing_task_id",
     )
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
@@ -38,6 +42,8 @@ class AskRequest(StrictApiModel):
             self.opportunity_id,
             self.investigation_task_id,
             self.decision_id,
+            self.sequencing_requirement_id,
+            self.sequencing_task_id,
         )
         if sum(item is not None for item in modes) > 1:
             raise ValueError(
@@ -265,6 +271,56 @@ class DecisionDetailResponse(StrictApiModel):
     assessment: DecisionAssessmentResponse
 
 
+class EvidenceLeverageResponse(StrictApiModel):
+    requirement_id: str
+    requirement_name: str
+    description: str
+    requirement_status: str
+    affected_decision_ids: list[str]
+    affected_opportunity_ids: list[str]
+    related_task_ids: list[str]
+    affected_decision_count: int
+    affected_opportunity_count: int
+    highest_opportunity_priority: str
+    shared_across_decisions: bool
+    shared_across_opportunities: bool
+    existing_gap_id: str | None
+    limitation: str
+
+
+class InvestigationSequenceResponse(StrictApiModel):
+    sequence_order: int
+    task_id: str
+    investigation_plan_id: str
+    opportunity_id: str
+    task_title: str
+    task_kind: str
+    task_readiness: str
+    affected_decision_ids: list[str]
+    addressed_requirement_ids: list[str]
+    affected_decision_count: int
+    opportunity_priority: str
+    opportunity_order: int
+    can_begin_now: bool
+    sequencing_reason: str
+    limitation: str
+
+
+class SequencingPortfolioResponse(StrictApiModel):
+    business_id: str
+    as_of_date: date
+    state: str
+    evidence_leverage_items: list[EvidenceLeverageResponse]
+    sequence_items: list[InvestigationSequenceResponse]
+    top_evidence_focus_requirement_id: str | None
+    recommended_next_task_id: str | None
+    startable_task_count: int
+    blocked_sequence_task_count: int
+    targeted_needs_more_evidence_decision_ids: list[str]
+    boundary_blocked_decision_ids: list[str]
+    limitation: str
+
+
 class ApiErrorCode(StrEnum):
     INVALID_REQUEST = "INVALID_REQUEST"
     BUSINESS_NOT_FOUND = "BUSINESS_NOT_FOUND"
@@ -283,6 +339,11 @@ class ApiErrorCode(StrEnum):
     INVALID_DECISION_ID = "INVALID_DECISION_ID"
     DECISION_NOT_FOUND = "DECISION_NOT_FOUND"
     DECISION_VALIDATION_FAILED = "DECISION_VALIDATION_FAILED"
+    INVALID_SEQUENCING_REQUIREMENT_ID = "INVALID_SEQUENCING_REQUIREMENT_ID"
+    SEQUENCING_REQUIREMENT_NOT_FOUND = "SEQUENCING_REQUIREMENT_NOT_FOUND"
+    INVALID_SEQUENCING_TASK_ID = "INVALID_SEQUENCING_TASK_ID"
+    SEQUENCING_TASK_NOT_FOUND = "SEQUENCING_TASK_NOT_FOUND"
+    SEQUENCING_VALIDATION_FAILED = "SEQUENCING_VALIDATION_FAILED"
 
 
 class ErrorDetail(StrictApiModel):

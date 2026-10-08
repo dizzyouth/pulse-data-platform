@@ -5,6 +5,7 @@ const ASK_ENDPOINT = "/api/v1/analyst/ask";
 const OPPORTUNITIES_ENDPOINT = "/api/v1/analyst/opportunities";
 const INVESTIGATIONS_ENDPOINT = "/api/v1/analyst/investigations";
 const DECISIONS_ENDPOINT = "/api/v1/analyst/decisions";
+const SEQUENCING_ENDPOINT = "/api/v1/analyst/sequencing";
 
 const form = document.querySelector("#ask-form");
 const questionInput = document.querySelector("#question");
@@ -23,6 +24,10 @@ let lastInvestigationTaskId = null;
 let lastInvestigationTaskTitle = "";
 let lastDecisionId = null;
 let lastDecisionTitle = "";
+let lastSequencingRequirementId = null;
+let lastSequencingRequirementTitle = "";
+let lastSequencingTaskId = null;
+let lastSequencingTaskTitle = "";
 
 function clearNode(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
@@ -428,7 +433,7 @@ function renderInvestigationPortfolio(portfolio) {
     (task) => task.task_id === portfolio.recommended_start_task_id,
   );
   document.querySelector("#recommended-investigation").textContent =
-    `Recommended next investigation: ${recommended ? recommended.title : "None currently available"}`;
+    `Investigation plan starting point: ${recommended ? recommended.title : "None currently available"}`;
 
   const gaps = document.querySelector("#evidence-gap-list");
   clearNode(gaps);
@@ -501,6 +506,272 @@ function renderDecisionPortfolio(decisions, opportunities, investigations) {
     : "No active decision-readiness assessments.";
 }
 
+function sequencingStateLabel(state) {
+  const labels = {
+    READY_TASK_AVAILABLE: "Startable investigation available",
+    EVIDENCE_GAP_FIRST: "Evidence gap first",
+    BOUNDARY_ONLY: "Boundary-limited",
+    NO_OPEN_READINESS_GAPS: "No open readiness gaps",
+  };
+  return labels[state] || "Unknown sequencing state";
+}
+
+function sequencingRequirementAction(label, question, item) {
+  const button = textElement("button", label, "opportunity-action sequencing-action");
+  button.type = "button";
+  button.dataset.sequencingRequirementId = item.requirement_id;
+  button.addEventListener("click", () => {
+    questionInput.value = question;
+    askPulse(
+      question, null, "", null, "", null, "",
+      item.requirement_id, item.requirement_name,
+    );
+  });
+  return button;
+}
+
+function sequencingTaskAction(label, question, item) {
+  const button = textElement("button", label, "opportunity-action sequencing-action");
+  button.type = "button";
+  button.dataset.sequencingTaskId = item.task_id;
+  button.addEventListener("click", () => {
+    questionInput.value = question;
+    askPulse(
+      question, null, "", null, "", null, "", null, "",
+      item.task_id, item.task_title,
+    );
+  });
+  return button;
+}
+
+function renderLeverageCard(item, decisionsById, sequenceById) {
+  const card = document.createElement("article");
+  card.className = "leverage-card";
+  card.dataset.requirementId = item.requirement_id;
+  const badges = document.createElement("div");
+  badges.className = "badges leverage-badges";
+  badges.appendChild(textElement(
+    "span",
+    `${item.highest_opportunity_priority} opportunity priority`,
+    `badge priority-${item.highest_opportunity_priority.toLowerCase()}`,
+  ));
+  badges.appendChild(textElement(
+    "span",
+    item.requirement_status.replaceAll("_", " "),
+    "badge badge-caution",
+  ));
+  if (item.shared_across_decisions) {
+    badges.appendChild(textElement("span", "SHARED ACROSS DECISIONS", "badge"));
+  }
+  card.appendChild(badges);
+  card.appendChild(textElement("h4", item.requirement_name));
+  card.appendChild(textElement(
+    "p",
+    `${item.affected_decision_count} non-ready decisions · ${item.affected_opportunity_count} opportunities`,
+    "leverage-counts",
+  ));
+
+  const actions = document.createElement("div");
+  actions.className = "opportunity-actions sequencing-actions";
+  actions.appendChild(sequencingRequirementAction(
+    "Why this focus?", "Why this evidence focus?", item,
+  ));
+  actions.appendChild(sequencingRequirementAction(
+    "Which decisions depend on this?", "Which decisions depend on this evidence?", item,
+  ));
+  actions.appendChild(sequencingRequirementAction(
+    "Does this guarantee readiness?", "Will this evidence guarantee readiness?", item,
+  ));
+  card.appendChild(actions);
+
+  const details = document.createElement("details");
+  details.className = "sequencing-details";
+  details.appendChild(textElement("summary", "View evidence focus details"));
+  const content = document.createElement("div");
+  content.className = "sequencing-details-content";
+  appendDetailSection(content, "Description", item.description);
+  appendDetailSection(
+    content,
+    "Affected decision questions",
+    item.affected_decision_ids.map(
+      (id) => decisionsById.get(id)?.decision_question || id,
+    ),
+  );
+  appendDetailSection(
+    content,
+    "Related investigation tasks",
+    item.related_task_ids.map((id) => sequenceById.get(id)?.task_title || id),
+  );
+  appendDetailSection(content, "Existing evidence gap", item.existing_gap_id || "None");
+  appendDetailSection(content, "Limitation", item.limitation);
+  const technical = document.createElement("details");
+  technical.className = "sequencing-technical";
+  technical.appendChild(textElement("summary", "Technical associations"));
+  appendDetailSection(technical, "Requirement ID", item.requirement_id);
+  appendDetailSection(technical, "Affected decision IDs", item.affected_decision_ids);
+  appendDetailSection(technical, "Affected opportunity IDs", item.affected_opportunity_ids);
+  appendDetailSection(technical, "Related task IDs", item.related_task_ids);
+  content.appendChild(technical);
+  details.appendChild(content);
+  card.appendChild(details);
+  return card;
+}
+
+function renderSequenceItem(item, decisionsById, leverageById, plansById, opportunitiesById) {
+  const card = document.createElement("article");
+  card.className = "sequence-item";
+  card.dataset.sequenceOrder = String(item.sequence_order);
+  card.dataset.taskId = item.task_id;
+  const header = document.createElement("div");
+  header.className = "sequence-item-heading";
+  const badges = document.createElement("div");
+  badges.className = "badges sequence-badges";
+  badges.appendChild(textElement(
+    "span",
+    item.can_begin_now ? "CAN BEGIN NOW" : "BLOCKED BY CURRENT EVIDENCE",
+    item.can_begin_now ? "badge readiness-ready_now" : "badge readiness-blocked_missing_evidence",
+  ));
+  badges.appendChild(textElement(
+    "span",
+    readinessLabel(item.task_readiness),
+    `badge readiness-${item.task_readiness.toLowerCase()}`,
+  ));
+  header.appendChild(badges);
+  header.appendChild(textElement("span", `#${item.sequence_order}`, "opportunity-order"));
+  card.appendChild(header);
+  card.appendChild(textElement("h4", item.task_title));
+  card.appendChild(textElement(
+    "p",
+    `Can begin now: ${item.can_begin_now ? "Yes" : "No"} · ${item.affected_decision_count} affected decisions · ${item.opportunity_priority} priority`,
+    "sequence-facts",
+  ));
+  card.appendChild(textElement("p", item.sequencing_reason, "sequence-reason"));
+
+  const actions = document.createElement("div");
+  actions.className = "opportunity-actions sequencing-actions";
+  actions.appendChild(sequencingTaskAction(
+    "Why is this ordered here?", "Why is this ordered here?", item,
+  ));
+  actions.appendChild(sequencingTaskAction(
+    "Can this begin now?", "Can this investigation begin now?", item,
+  ));
+  actions.appendChild(sequencingTaskAction(
+    "What could this help clarify?", "What could this investigation help clarify?", item,
+  ));
+  card.appendChild(actions);
+
+  const details = document.createElement("details");
+  details.className = "sequencing-details";
+  details.appendChild(textElement("summary", "View sequence details"));
+  const content = document.createElement("div");
+  content.className = "sequencing-details-content";
+  appendDetailSection(
+    content,
+    "Affected decision questions",
+    item.affected_decision_ids.map(
+      (id) => decisionsById.get(id)?.decision_question || id,
+    ),
+  );
+  appendDetailSection(
+    content,
+    "Addressed requirements",
+    item.addressed_requirement_ids.map(
+      (id) => leverageById.get(id)?.requirement_name || id,
+    ),
+  );
+  const plan = plansById.get(item.investigation_plan_id);
+  const opportunity = opportunitiesById.get(item.opportunity_id);
+  appendDetailSection(content, "Investigation plan", plan ? plan.decision_unlocked : "Unavailable in current product payload.");
+  appendDetailSection(content, "Associated opportunity", opportunity ? opportunity.title : "Unavailable in current product payload.");
+  appendDetailSection(content, "Limitation", item.limitation);
+  const technical = document.createElement("details");
+  technical.className = "sequencing-technical";
+  technical.appendChild(textElement("summary", "Technical associations"));
+  appendDetailSection(technical, "Task ID", item.task_id);
+  appendDetailSection(technical, "Investigation plan ID", item.investigation_plan_id);
+  appendDetailSection(technical, "Opportunity ID", item.opportunity_id);
+  content.appendChild(technical);
+  details.appendChild(content);
+  card.appendChild(details);
+  return card;
+}
+
+function renderSequencingPortfolio(sequencing, decisions, opportunities, investigations) {
+  const section = document.querySelector("#sequencing-section");
+  section.hidden = false;
+  const leverageById = new Map(
+    sequencing.evidence_leverage_items.map((item) => [item.requirement_id, item]),
+  );
+  const sequenceById = new Map(
+    sequencing.sequence_items.map((item) => [item.task_id, item]),
+  );
+  const decisionsById = new Map(
+    decisions.assessments.map((item) => [item.decision_id, item]),
+  );
+  const opportunitiesById = new Map(
+    opportunities.opportunities.map((item) => [item.opportunity_id, item]),
+  );
+  const plansById = new Map(
+    investigations.plans.map((item) => [item.plan_id, item]),
+  );
+  const top = sequencing.top_evidence_focus_requirement_id
+    ? leverageById.get(sequencing.top_evidence_focus_requirement_id)
+    : null;
+  const recommended = sequencing.recommended_next_task_id
+    ? sequenceById.get(sequencing.recommended_next_task_id)
+    : null;
+
+  document.querySelector("#sequencing-state").textContent = sequencingStateLabel(sequencing.state);
+  document.querySelector("#sequencing-top-focus").textContent = top
+    ? top.requirement_name
+    : "None currently available";
+  document.querySelector("#sequencing-relevance").textContent = top
+    ? `${top.affected_decision_count} non-ready decisions · ${top.affected_opportunity_count} opportunities`
+    : "No current evidence focus";
+  document.querySelector("#sequencing-startable-count").textContent = String(
+    sequencing.startable_task_count,
+  );
+  document.querySelector("#sequencing-next-task").textContent = sequencing.recommended_next_task_id
+    ? (recommended?.task_title || "Unavailable in current product payload")
+    : "None currently available";
+
+  const noStartable = document.querySelector("#sequencing-no-startable");
+  const showNoStartable = sequencing.state === "EVIDENCE_GAP_FIRST"
+    && sequencing.recommended_next_task_id === null;
+  noStartable.hidden = !showNoStartable;
+  document.querySelector("#sequencing-no-startable-focus").textContent = top
+    ? `Top evidence focus: ${top.requirement_name}`
+    : "Top evidence focus unavailable.";
+  const noStartableAsk = document.querySelector("#sequencing-no-startable-ask");
+  noStartableAsk.hidden = !showNoStartable || !top;
+  noStartableAsk.onclick = top ? () => {
+    const question = "Why is there no next startable investigation?";
+    questionInput.value = question;
+    askPulse(
+      question, null, "", null, "", null, "",
+      top.requirement_id, top.requirement_name,
+    );
+  } : null;
+
+  const leverageCards = document.querySelector("#leverage-cards");
+  clearNode(leverageCards);
+  for (const item of sequencing.evidence_leverage_items) {
+    leverageCards.appendChild(renderLeverageCard(item, decisionsById, sequenceById));
+  }
+  const sequenceList = document.querySelector("#sequence-list");
+  clearNode(sequenceList);
+  for (const item of sequencing.sequence_items) {
+    sequenceList.appendChild(renderSequenceItem(
+      item, decisionsById, leverageById, plansById, opportunitiesById,
+    ));
+  }
+  document.querySelector("#sequencing-status").textContent =
+    sequencing.evidence_leverage_items.length || sequencing.sequence_items.length
+      ? ""
+      : "No open evidence-leverage or readiness-raising sequence items.";
+  document.querySelector("#sequencing-limitation").textContent = sequencing.limitation;
+}
+
 function renderOpportunities(payload, portfolio, decisions) {
   const opportunities = payload.opportunities;
   const plansByOpportunityId = new Map(
@@ -535,15 +806,22 @@ function renderOpportunities(payload, portfolio, decisions) {
 async function loadProductData() {
   const status = document.querySelector("#opportunities-status");
   try {
-    const [opportunitiesResponse, investigationsResponse, decisionsResponse] = await Promise.all([
+    const [
+      opportunitiesResponse,
+      investigationsResponse,
+      decisionsResponse,
+      sequencingResponse,
+    ] = await Promise.all([
       fetch(`${OPPORTUNITIES_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
       fetch(`${INVESTIGATIONS_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
       fetch(`${DECISIONS_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
+      fetch(`${SEQUENCING_ENDPOINT}?business_id=${encodeURIComponent(BUSINESS_ID)}`),
     ]);
-    const [opportunities, portfolio, decisions] = await Promise.all([
+    const [opportunities, portfolio, decisions, sequencing] = await Promise.all([
       opportunitiesResponse.json(),
       investigationsResponse.json(),
       decisionsResponse.json(),
+      sequencingResponse.json(),
     ]);
     if (!opportunitiesResponse.ok) {
       throw new Error(opportunities.error?.message || "Opportunities are temporarily unavailable.");
@@ -554,8 +832,12 @@ async function loadProductData() {
     if (!decisionsResponse.ok) {
       throw new Error(decisions.error?.message || "Decision readiness is temporarily unavailable.");
     }
+    if (!sequencingResponse.ok) {
+      throw new Error(sequencing.error?.message || "Evidence sequencing is temporarily unavailable.");
+    }
     renderInvestigationPortfolio(portfolio);
     renderDecisionPortfolio(decisions, opportunities, portfolio);
+    renderSequencingPortfolio(sequencing, decisions, opportunities, portfolio);
     renderOpportunities(opportunities, portfolio, decisions);
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "Investigation plans are temporarily unavailable.";
@@ -568,12 +850,17 @@ function renderAnswer(payload) {
   document.querySelector("#confidence-badge").textContent = `${answer.confidence} confidence`;
   document.querySelector("#partial-badge").hidden = !answer.cannot_answer_fully;
   const opportunityContext = document.querySelector("#answer-opportunity-context");
-  opportunityContext.hidden = !lastOpportunityId && !lastInvestigationTaskId && !lastDecisionId;
-  opportunityContext.textContent = lastDecisionId
-    ? `Answer about decision: ${lastDecisionTitle}`
-    : (lastInvestigationTaskId
-      ? `Answer about investigation: ${lastInvestigationTaskTitle}`
-      : (lastOpportunityId ? `Answer about: ${lastOpportunityTitle}` : ""));
+  opportunityContext.hidden = !lastOpportunityId && !lastInvestigationTaskId
+    && !lastDecisionId && !lastSequencingRequirementId && !lastSequencingTaskId;
+  opportunityContext.textContent = lastSequencingTaskId
+    ? `Answer about investigation sequence: ${lastSequencingTaskTitle}`
+    : (lastSequencingRequirementId
+      ? `Answer about evidence focus: ${lastSequencingRequirementTitle}`
+      : (lastDecisionId
+        ? `Answer about decision: ${lastDecisionTitle}`
+        : (lastInvestigationTaskId
+          ? `Answer about investigation: ${lastInvestigationTaskTitle}`
+          : (lastOpportunityId ? `Answer about: ${lastOpportunityTitle}` : ""))));
 
   const findings = document.querySelector("#findings-list");
   clearNode(findings);
@@ -642,6 +929,10 @@ async function askPulse(
   investigationTaskTitle = "",
   decisionId = null,
   decisionTitle = "",
+  sequencingRequirementId = null,
+  sequencingRequirementTitle = "",
+  sequencingTaskId = null,
+  sequencingTaskTitle = "",
 ) {
   const trimmed = question.trim();
   if (!trimmed) {
@@ -656,11 +947,18 @@ async function askPulse(
   lastInvestigationTaskTitle = investigationTaskTitle;
   lastDecisionId = decisionId;
   lastDecisionTitle = decisionTitle;
+  lastSequencingRequirementId = sequencingRequirementId;
+  lastSequencingRequirementTitle = sequencingRequirementTitle;
+  lastSequencingTaskId = sequencingTaskId;
+  lastSequencingTaskTitle = sequencingTaskTitle;
   errorPanel.hidden = true;
   setLoading(true);
   try {
     const requestBody = { business_id: BUSINESS_ID, question: trimmed };
-    if (decisionId) requestBody.decision_id = decisionId;
+    if (sequencingRequirementId) {
+      requestBody.sequencing_requirement_id = sequencingRequirementId;
+    } else if (sequencingTaskId) requestBody.sequencing_task_id = sequencingTaskId;
+    else if (decisionId) requestBody.decision_id = decisionId;
     else if (investigationTaskId) requestBody.investigation_task_id = investigationTaskId;
     else if (opportunityId) requestBody.opportunity_id = opportunityId;
     const response = await fetch(ASK_ENDPOINT, {
@@ -702,6 +1000,10 @@ retryButton.addEventListener("click", () => {
       lastInvestigationTaskTitle,
       lastDecisionId,
       lastDecisionTitle,
+      lastSequencingRequirementId,
+      lastSequencingRequirementTitle,
+      lastSequencingTaskId,
+      lastSequencingTaskTitle,
     );
   }
 });

@@ -2848,3 +2848,14 @@ evidence-gap-first state without forcing a recommendation. This offline engine
 does not execute work, promise decision unlocks, rank business actions, or add
 API/UI behavior. See
 [`docs/phase_6_9a_evidence_leverage_sequencing.md`](docs/phase_6_9a_evidence_leverage_sequencing.md).
+
+## Phase 6.9B - evidence sequencing product
+
+The local Analyst API and existing Ask Pulse page now expose the validated
+evidence-leverage portfolio and investigation sequence. The product shows the
+top unresolved evidence focus, affected decision breadth, startable task count,
+and the next startable investigation only when the engine supplies one. A valid
+evidence-gap-first state remains explicit when all readiness-raising tasks are
+blocked. Sequencing explanations are deterministic and provider-free; they do
+not promise a decision unlock or recommend or execute business actions. See
+[`docs/phase_6_9b_sequencing_product.md`](docs/phase_6_9b_sequencing_product.md).

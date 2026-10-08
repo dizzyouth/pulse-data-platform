@@ -34,6 +34,7 @@ from src.api.models import (
     OpportunityDetailResponse,
     OpportunityListResponse,
     OpportunityResponse,
+    SequencingPortfolioResponse,
 )
 from src.api.safety import valid_business_id
 from src.api.service import (
@@ -59,6 +60,7 @@ from src.intelligence.decision_models import (
     DecisionReadinessPortfolio,
     valid_decision_id_shape,
 )
+from src.intelligence.sequencing_models import InvestigationSequencingPortfolio
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -124,6 +126,12 @@ def _decision_portfolio_response(
     portfolio: DecisionReadinessPortfolio,
 ) -> DecisionPortfolioResponse:
     return DecisionPortfolioResponse.model_validate(portfolio.to_dict())
+
+
+def _sequencing_portfolio_response(
+    portfolio: InvestigationSequencingPortfolio,
+) -> SequencingPortfolioResponse:
+    return SequencingPortfolioResponse.model_validate(portfolio.to_dict())
 
 
 def _request_id(request: Request) -> str:
@@ -426,6 +434,31 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             assessment=_decision_assessment_response(assessment),
         )
 
+    @application.get(
+        "/api/v1/analyst/sequencing",
+        response_model=SequencingPortfolioResponse,
+    )
+    async def list_sequencing(
+        request: Request, business_id: str
+    ) -> SequencingPortfolioResponse:
+        if valid_business_id(business_id):
+            request.state.business_id = business_id
+        portfolio = analyst.list_sequencing(business_id)
+        response = _sequencing_portfolio_response(portfolio)
+        LOGGER.info(
+            "analyst_api request_id=%s business_id=%s answer_source=%s "
+            "sequencing_state=%s leverage_count=%d sequence_count=%d "
+            "startable_task_count=%d success=true",
+            _request_id(request),
+            business_id,
+            "deterministic_evidence_sequencing",
+            response.state,
+            len(response.evidence_leverage_items),
+            len(response.sequence_items),
+            response.startable_task_count,
+        )
+        return response
+
     @application.post("/api/v1/analyst/ask", response_model=AskResponse)
     async def ask(request: Request, payload: AskRequest) -> AskResponse:
         request_id = _request_id(request)
@@ -452,6 +485,8 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             payload.opportunity_id,
             payload.investigation_task_id,
             payload.decision_id,
+            payload.sequencing_requirement_id,
+            payload.sequencing_task_id,
         )
         answer = result.answer
         response = AskResponse(
@@ -496,6 +531,8 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             "opportunity_id=%s opportunity_type=%s plan_id=%s task_id=%s "
             "task_readiness=%s decision_id=%s decision_type=%s "
             "decision_class=%s decision_readiness=%s answer_source=%s "
+            "sequencing_requirement_id=%s sequencing_task_id=%s "
+            "sequencing_state=%s "
             "provider=%s model=%s evidence_count=%d latency_ms=%.2f "
             "provider_call_count=%d repair_attempted=%s "
             "deterministic_fallback_used=%s success=true",
@@ -512,6 +549,9 @@ def create_app(service: AnalystService | None = None) -> FastAPI:
             result.decision_class or "NONE",
             result.decision_readiness or "NONE",
             result.answer_source,
+            result.sequencing_requirement_id or "NONE",
+            result.sequencing_task_id or "NONE",
+            result.sequencing_state or "NONE",
             result.provider,
             result.model,
             result.evidence_count,

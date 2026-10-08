@@ -95,6 +95,53 @@
       <div id="decision-cards" class="decision-cards"></div>
     </section>
 
+    <section id="sequencing-section" class="sequencing-section" hidden aria-labelledby="sequencing-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Prioritized analytical learning</p>
+          <h2 id="sequencing-heading">What should we learn next?</h2>
+          <p>Prioritizes analytical learning from current decision-readiness gaps. It does not recommend or execute business actions.</p>
+        </div>
+      </div>
+      <div class="sequencing-summary" aria-label="Evidence sequencing summary">
+        <div class="sequencing-summary-item">
+          <span>Portfolio state</span>
+          <strong id="sequencing-state"></strong>
+        </div>
+        <div class="sequencing-summary-item">
+          <span>Top evidence focus</span>
+          <strong id="sequencing-top-focus"></strong>
+        </div>
+        <div class="sequencing-summary-item">
+          <span>Relevant to</span>
+          <strong id="sequencing-relevance"></strong>
+        </div>
+        <div class="sequencing-summary-item">
+          <span>Startable readiness-raising investigations</span>
+          <strong id="sequencing-startable-count"></strong>
+        </div>
+        <div class="sequencing-summary-item">
+          <span>Next startable investigation</span>
+          <strong id="sequencing-next-task"></strong>
+        </div>
+      </div>
+      <aside id="sequencing-no-startable" class="sequencing-no-startable" hidden>
+        <strong>No readiness-raising investigation can begin now with the current validated context.</strong>
+        <p id="sequencing-no-startable-focus"></p>
+        <button id="sequencing-no-startable-ask" type="button" class="opportunity-action">Why is nothing startable?</button>
+      </aside>
+      <div id="sequencing-status" class="opportunities-status" aria-live="polite"></div>
+      <section class="sequencing-collection" aria-labelledby="leverage-heading">
+        <h3 id="leverage-heading">Evidence leverage</h3>
+        <div id="leverage-cards" class="leverage-cards"></div>
+      </section>
+      <section class="sequencing-collection" aria-labelledby="sequence-heading">
+        <h3 id="sequence-heading">Investigation sequence</h3>
+        <div id="sequence-list" class="sequence-list"></div>
+      </section>
+      <p id="sequencing-limitation" class="sequencing-limitation"></p>
+    </section>
+
     <section id="status-panel" class="status-panel" hidden aria-live="polite"></section>
 
     <section id="error-panel" class="error-panel" hidden role="alert">

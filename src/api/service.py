@@ -1,8 +1,9 @@
-"""Thin service adapter over analyst, opportunity, investigation, and decision engines."""
+"""Thin service adapter over the validated Pulse intelligence engines."""
 
 from __future__ import annotations
 
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -59,6 +60,17 @@ from src.intelligence.providers import (
     ProviderError,
     classify_question_intent,
 )
+from src.intelligence.sequencing import build_investigation_sequencing_portfolio
+from src.intelligence.sequencing_answers import (
+    answer_sequencing_question,
+    classify_sequencing_question,
+)
+from src.intelligence.sequencing_models import (
+    EvidenceLeverageItem,
+    InvestigationSequenceItem,
+    InvestigationSequencingPortfolio,
+    SequencingValidationError,
+)
 from src.warehouse.load_gold import connection_kwargs
 
 
@@ -82,6 +94,10 @@ CAPABILITIES = (
     "Evaluate whether evidence is sufficient for bounded human decision review",
     "Explain why a decision is or is not ready",
     "Identify evidence and investigations that could raise readiness",
+    "Identify evidence shared across multiple decision-readiness gaps",
+    "Show which investigations could produce relevant evidence",
+    "Identify whether any readiness-raising investigation can begin now",
+    "Explain why no next investigation is currently startable",
 )
 
 LIMITATIONS = (
@@ -91,6 +107,12 @@ LIMITATIONS = (
     "No persistent conversation memory.",
     "Observed differences do not establish causal reasons.",
     "No autonomous decisions or recommendation execution.",
+    "No automatic evidence collection or task execution.",
+    "No guaranteed decision unlock or business-action recommendation.",
+)
+
+_SEQUENCING_REQUIREMENT_ID = re.compile(
+    r"^requirement:[a-z0-9][a-z0-9_:-]*$"
 )
 
 
@@ -121,6 +143,9 @@ class ServiceAnswer:
     decision_type: str | None = None
     decision_class: str | None = None
     decision_readiness: str | None = None
+    sequencing_requirement_id: str | None = None
+    sequencing_task_id: str | None = None
+    sequencing_state: str | None = None
 
 
 ContextBuilder = Callable[[str], IntelligenceContext]
@@ -246,6 +271,27 @@ class AnalystService:
                 422,
             )
 
+    @staticmethod
+    def _validate_sequencing_requirement_id(requirement_id: str) -> None:
+        if (
+            len(requirement_id) > 240
+            or not _SEQUENCING_REQUIREMENT_ID.fullmatch(requirement_id)
+        ):
+            raise AnalystServiceError(
+                ApiErrorCode.INVALID_SEQUENCING_REQUIREMENT_ID,
+                "The request contains an invalid sequencing requirement identifier.",
+                422,
+            )
+
+    @staticmethod
+    def _validate_sequencing_task_id(task_id: str) -> None:
+        if len(task_id) > 300 or not valid_task_id_shape(task_id):
+            raise AnalystServiceError(
+                ApiErrorCode.INVALID_SEQUENCING_TASK_ID,
+                "The request contains an invalid sequencing task identifier.",
+                422,
+            )
+
     def _build_context(self, business_id: str) -> IntelligenceContext:
         try:
             context = self._context_builder(business_id)
@@ -327,6 +373,106 @@ class AnalystService:
         evaluation = self._evaluate(context)
         investigations = self._plan_portfolio(context, evaluation)
         return self._decision_portfolio(context, evaluation, investigations)
+
+    @staticmethod
+    def _sequencing_portfolio(
+        context: IntelligenceContext,
+        evaluation: OpportunityEvaluation,
+        investigations: InvestigationPortfolio,
+        decisions: DecisionReadinessPortfolio,
+    ) -> InvestigationSequencingPortfolio:
+        try:
+            return build_investigation_sequencing_portfolio(
+                context, evaluation, investigations, decisions
+            )
+        except SequencingValidationError:
+            raise AnalystServiceError(
+                ApiErrorCode.SEQUENCING_VALIDATION_FAILED,
+                "The evidence-sequencing engine could not produce safely validated results.",
+                422,
+            ) from None
+
+    def _build_sequencing_layers(
+        self, business_id: str
+    ) -> tuple[
+        IntelligenceContext,
+        OpportunityEvaluation,
+        InvestigationPortfolio,
+        DecisionReadinessPortfolio,
+        InvestigationSequencingPortfolio,
+    ]:
+        self._validate_business_id(business_id)
+        context = self._build_context(business_id)
+        evaluation = self._evaluate(context)
+        investigations = self._plan_portfolio(context, evaluation)
+        decisions = self._decision_portfolio(context, evaluation, investigations)
+        sequencing = self._sequencing_portfolio(
+            context, evaluation, investigations, decisions
+        )
+        return context, evaluation, investigations, decisions, sequencing
+
+    def list_sequencing(
+        self, business_id: str
+    ) -> InvestigationSequencingPortfolio:
+        return self._build_sequencing_layers(business_id)[4]
+
+    def _resolve_sequencing_context(
+        self,
+        business_id: str,
+        requirement_id: str | None,
+        task_id: str | None,
+    ) -> tuple[
+        IntelligenceContext,
+        OpportunityEvaluation,
+        InvestigationPortfolio,
+        DecisionReadinessPortfolio,
+        InvestigationSequencingPortfolio,
+        EvidenceLeverageItem | None,
+        InvestigationSequenceItem | None,
+    ]:
+        if requirement_id is not None:
+            self._validate_sequencing_requirement_id(requirement_id)
+        if task_id is not None:
+            self._validate_sequencing_task_id(task_id)
+        context, evaluation, investigations, decisions, sequencing = (
+            self._build_sequencing_layers(business_id)
+        )
+        leverage_item = None
+        sequence_item = None
+        if requirement_id is not None:
+            leverage_item = next(
+                (
+                    item for item in sequencing.evidence_leverage_items
+                    if item.requirement_id == requirement_id
+                ),
+                None,
+            )
+            if leverage_item is None:
+                raise AnalystServiceError(
+                    ApiErrorCode.SEQUENCING_REQUIREMENT_NOT_FOUND,
+                    "No active evidence focus is available for this identifier and business.",
+                    404,
+                )
+        if task_id is not None:
+            sequence_item = next(
+                (item for item in sequencing.sequence_items if item.task_id == task_id),
+                None,
+            )
+            if sequence_item is None:
+                raise AnalystServiceError(
+                    ApiErrorCode.SEQUENCING_TASK_NOT_FOUND,
+                    "No active sequencing task is available for this identifier and business.",
+                    404,
+                )
+        return (
+            context,
+            evaluation,
+            investigations,
+            decisions,
+            sequencing,
+            leverage_item,
+            sequence_item,
+        )
 
     def _resolve_decision(
         self, business_id: str, decision_id: str
@@ -477,14 +623,17 @@ class AnalystService:
         opportunity_id: str | None = None,
         investigation_task_id: str | None = None,
         decision_id: str | None = None,
+        sequencing_requirement_id: str | None = None,
+        sequencing_task_id: str | None = None,
     ) -> ServiceAnswer:
         self._validate_business_id(business_id)
         if sum(item is not None for item in (
-            opportunity_id, investigation_task_id, decision_id
+            opportunity_id, investigation_task_id, decision_id,
+            sequencing_requirement_id, sequencing_task_id,
         )) > 1:
             raise AnalystServiceError(
                 ApiErrorCode.INVALID_REQUEST,
-                "Choose only one opportunity, investigation task, or decision context.",
+                "Choose only one opportunity, investigation, decision, or sequencing context.",
                 422,
             )
         if not is_aggregate_question(question):
@@ -492,6 +641,61 @@ class AnalystService:
                 ApiErrorCode.AGGREGATE_ONLY_REQUIRED,
                 "This analyst accepts aggregate business questions only.",
                 422,
+            )
+
+        if sequencing_requirement_id is not None or sequencing_task_id is not None:
+            started = time.perf_counter()
+            (
+                context,
+                evaluation,
+                investigations,
+                decisions,
+                sequencing,
+                leverage_item,
+                sequence_item,
+            ) = self._resolve_sequencing_context(
+                business_id,
+                sequencing_requirement_id,
+                sequencing_task_id,
+            )
+            try:
+                answer = answer_sequencing_question(
+                    question,
+                    sequencing,
+                    context,
+                    evaluation,
+                    investigations,
+                    decisions,
+                    leverage_item=leverage_item,
+                    sequence_item=sequence_item,
+                )
+            except AnswerValidationError:
+                raise AnalystServiceError(
+                    ApiErrorCode.SEQUENCING_VALIDATION_FAILED,
+                    "The analyst could not produce a safely grounded sequencing answer.",
+                    422,
+                ) from None
+            return ServiceAnswer(
+                answer=answer,
+                execution=AnswerExecutionMetadata(
+                    provider_call_count=0,
+                    repair_attempted=False,
+                    deterministic_fallback_used=False,
+                    fallback_intent=None,
+                    latency_ms=(time.perf_counter() - started) * 1000,
+                ),
+                question_category=classify_sequencing_question(question).value,
+                provider="deterministic",
+                model="sequencing-engine-v1",
+                evidence_count=len(context.evidence_items),
+                answer_source="deterministic_evidence_sequencing",
+                sequencing_requirement_id=(
+                    leverage_item.requirement_id if leverage_item is not None else None
+                ),
+                sequencing_task_id=(
+                    sequence_item.task_id if sequence_item is not None else None
+                ),
+                sequencing_state=sequencing.state.value,
             )
 
         if decision_id is not None:

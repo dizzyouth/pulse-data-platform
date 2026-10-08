@@ -177,7 +177,7 @@ li { margin: 0.55rem 0; line-height: 1.5; }
 
 footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-size: 0.75rem; }
 
-.opportunities-section, .decision-readiness-section { margin-top: 1.5rem; }
+.opportunities-section, .decision-readiness-section, .sequencing-section { margin-top: 1.5rem; }
 .section-heading { display: flex; justify-content: space-between; gap: 1.5rem; align-items: end; }
 .section-heading h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.8rem, 4vw, 2.7rem); font-weight: 500; }
 .section-heading p:last-child { margin: 0.55rem 0 0; color: var(--muted); }
@@ -262,6 +262,62 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
 .decision-readiness-ready_for_human_review { background: var(--green-soft); color: var(--green-dark); }
 .decision-readiness-needs_more_evidence { background: var(--amber-soft); color: var(--amber); }
 .decision-readiness-blocked_by_boundary { background: #eef2ed; color: #526358; }
+.sequencing-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.sequencing-summary-item {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--card);
+  box-shadow: 0 8px 22px rgba(29, 55, 39, 0.04);
+  overflow-wrap: anywhere;
+  padding: 0.9rem;
+}
+.sequencing-summary-item span, .sequencing-summary-item strong { display: block; }
+.sequencing-summary-item span { color: var(--muted); font-size: 0.7rem; font-weight: 750; text-transform: uppercase; }
+.sequencing-summary-item strong { margin-top: 0.45rem; font-size: 0.9rem; line-height: 1.4; }
+.sequencing-no-startable {
+  margin-top: 1rem;
+  border: 1px solid #e8d5a8;
+  border-radius: 1rem;
+  background: var(--amber-soft);
+  color: #6f4914;
+  padding: 1rem;
+}
+.sequencing-no-startable p { margin: 0.45rem 0 0; font-size: 0.82rem; }
+.sequencing-no-startable .opportunity-action { margin-top: 0.75rem; }
+.sequencing-collection { margin-top: 1.2rem; }
+.sequencing-collection > h3 { margin: 0 0 0.75rem; font-size: 1rem; }
+.leverage-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 0.8rem;
+  align-items: start;
+}
+.leverage-card, .sequence-item {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--card);
+  box-shadow: 0 9px 24px rgba(29, 55, 39, 0.05);
+  overflow-wrap: anywhere;
+  padding: 1rem;
+}
+.leverage-badges, .sequence-badges { justify-content: flex-start; }
+.leverage-card h4, .sequence-item h4 { margin: 0.85rem 0 0.3rem; font-size: 1rem; line-height: 1.4; }
+.leverage-counts, .sequence-facts { margin: 0; color: var(--green-dark); font-size: 0.76rem; font-weight: 700; line-height: 1.45; }
+.sequence-list { display: grid; gap: 0.75rem; }
+.sequence-item-heading { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
+.sequence-reason { margin: 0.75rem 0 0; color: #435047; font-size: 0.82rem; line-height: 1.5; }
+.sequencing-details { margin-top: 0.9rem; border-top: 1px solid var(--line); padding-top: 0.8rem; }
+.sequencing-details > summary, .sequencing-technical > summary { cursor: pointer; font-size: 0.8rem; font-weight: 750; }
+.sequencing-details-content { margin-top: 0.8rem; }
+.sequencing-technical { margin-top: 0.8rem; border-radius: 0.65rem; background: #f8faf7; padding: 0.7rem; }
+.sequencing-limitation { margin: 1rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
 
 @media (max-width: 760px) {
   .environment-pill { display: none; }
@@ -273,6 +329,7 @@ footer { padding: 0 1rem 2rem; color: var(--muted); text-align: center; font-siz
   .investigation-counts { justify-content: flex-start; margin-top: 0.8rem; }
   .opportunity-counts { justify-content: flex-start; margin-top: 0.8rem; }
   .decision-counts { justify-content: flex-start; margin-top: 0.8rem; }
+  .sequencing-summary { grid-template-columns: 1fr; }
   .badges { justify-content: flex-start; margin-top: 0.7rem; }
   .metadata-card dl { grid-template-columns: 1fr; gap: 0.2rem; }
   .metadata-card dd { margin-bottom: 0.5rem; }
